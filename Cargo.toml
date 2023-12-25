@@ -1,8 +1,26 @@
 [package]
 name = "tcp-handler"
 version = "0.1.0"
+authors = ["xuxiaocheng <2762267080@qq.com>"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+anyhow = "^1.0"
+log = "~0.4"
+tokio = { version = "^1", features = ["io-util"] }
+bytes = "^1.5"
+variable-len-reader = { version = "^1", features = ["async_default"] }
+thiserror = "^1.0"
+rsa = { version = "~0.9", default-features = false, features = ["std"], optional = true }
+
+[features]
+default = ["auto_flush", "encrypt"]
+auto_flush = []
+encrypt = ["dep:rsa"]
+
+[dev-dependencies]
+env_logger = "~0.10"
+tokio = { version = "^1", features = ["rt-multi-thread", "macros", "net"] }
+
+[badges]
+maintenance = { status = "actively-developed" }
