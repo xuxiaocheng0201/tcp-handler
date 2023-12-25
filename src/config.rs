@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use thiserror::Error;
 
 pub struct Config {
-    max_packet_size: usize,
+    pub(crate) max_packet_size: usize,
 }
 
 impl Default for Config {
