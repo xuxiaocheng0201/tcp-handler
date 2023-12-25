@@ -3,7 +3,7 @@ use bytes::BytesMut;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use variable_len_reader::asynchronous::{AsyncVariableReadable, AsyncVariableWritable};
-use crate::config::CONFIG;
+use crate::config::get_max_packet_size;
 
 #[derive(Error, Debug)]
 pub enum PacketError {
@@ -15,7 +15,7 @@ pub enum PacketError {
 
 #[inline]
 fn check_bytes_len(len: usize) -> Result<(), PacketError> {
-    let config = unsafe { CONFIG.max_packet_size };
+    let config = get_max_packet_size();
     if len > config { Err(PacketError::TooLarge(len, config)) } else { Ok(()) }
 }
 

@@ -1,57 +1,64 @@
 use std::hint::spin_loop;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use thiserror::Error;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct Config {
-    pub(crate) max_packet_size: usize,
+    pub max_packet_size: usize,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            max_packet_size: 1 << 20,
-        }
-    }
-}
+static mut CONFIG: Config = Config {
+    max_packet_size: 1 << 20,
+};
 
-pub(crate) static mut CONFIG: Config = Config::default();
+static STATE: AtomicBool = AtomicBool::new(false);
 
-#[derive(Error, Debug)]
-#[error("Already initialized.")]
-pub struct InitConfigError {
-}
-
-static STATE: AtomicUsize = AtomicUsize::new(0);
-
-const UNINITIALIZED: usize = 0;
-const INITIALIZING: usize = 1;
-const INITIALIZED: usize = 2;
-
-pub fn init_config(config: Config) -> Result<(), InitConfigError> {
-    let old_state = match STATE.compare_exchange(
-        UNINITIALIZED,
-        INITIALIZING,
-        Ordering::SeqCst,
-        Ordering::SeqCst,
-    ) {
-        Ok(s) | Err(s) => s,
-    };
-    match old_state {
-        UNINITIALIZED => {
-            unsafe {
-                CONFIG = config;
-            }
-            STATE.store(INITIALIZED, Ordering::SeqCst);
-            Ok(())
-        }
-        INITIALIZING => {
-            while STATE.load(Ordering::SeqCst) == INITIALIZING {
+pub fn set_config(config: Config) {
+    loop {
+        if match STATE.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst, ) { Ok(s) | Err(s) => s, } {
+            while STATE.load(Ordering::SeqCst) {
                 spin_loop();
             }
-            Err(InitConfigError {})
-        }
-        _ => {
-            Err(InitConfigError {})
-        }
+            continue
+        } else {
+            unsafe { CONFIG = config; }
+            STATE.store(false, Ordering::SeqCst);
+            break
+        };
+    };
+}
+
+pub fn get_max_packet_size() -> usize {
+    loop {
+        if match STATE.compare_exchange(false, false, Ordering::SeqCst, Ordering::SeqCst, ) { Ok(s) | Err(s) => s, } {
+            while STATE.load(Ordering::SeqCst) {
+                spin_loop();
+            }
+            continue
+        } else {
+            return unsafe { CONFIG.max_packet_size }
+        };
+    };
+}
+
+#[cfg(test)]
+mod test {
+    use crate::config::{Config, get_max_packet_size, set_config};
+
+    #[test]
+    fn get() {
+        let _ = get_max_packet_size();
+    }
+
+    #[test]
+    fn set() {
+        set_config(Config { max_packet_size: 1 });
+        assert_eq!(1, get_max_packet_size());
+    }
+
+    #[test]
+    fn set_twice() {
+        set_config(Config { max_packet_size: 1 });
+        assert_eq!(1, get_max_packet_size());
+        set_config(Config { max_packet_size: 2 });
+        assert_eq!(2, get_max_packet_size());
     }
 }
