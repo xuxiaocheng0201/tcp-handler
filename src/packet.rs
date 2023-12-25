@@ -31,7 +31,7 @@ pub async fn write_packet<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, bytes
 pub async fn read_packet<R: AsyncReadExt + Unpin + Send>(stream: &mut R) -> Result<BytesMut, PacketError> {
     let len = stream.read_u128_varint().await? as usize;
     check_bytes_len(len)?;
-    let mut buf = BytesMut::with_capacity(len);
+    let mut buf = BytesMut::zeroed(len);
     stream.read_more(&mut buf).await?;
     Ok(buf)
 }
