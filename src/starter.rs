@@ -104,7 +104,7 @@ pub async fn client_init_with_compress_and_encrypt<W: AsyncWriteExt + Unpin + Se
 }
 
 #[inline]
-async fn read_head<R: AsyncReadExt + Unpin + Send, P: Fn(&str) -> bool>(stream: &mut R, identifier: &str, version: P, compression: bool, encryption: bool) -> Result<Reader<BytesMut>, StarterError> {
+async fn read_head<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) -> bool>(stream: &mut R, identifier: &str, version: P, compression: bool, encryption: bool) -> Result<Reader<BytesMut>, StarterError> {
     let mut magic = vec![0; MAGIC_BYTES.len()];
     stream.read_more(&mut magic).await?;
     if magic != MAGIC_BYTES { return Err(StarterError::InvalidStream()); }
@@ -117,17 +117,17 @@ async fn read_head<R: AsyncReadExt + Unpin + Send, P: Fn(&str) -> bool>(stream: 
     if !version(&read_version) { return Err(StarterError::ClientInvalidVersion(read_version)); }
     Ok(reader)
 }
-pub async fn server_init<R: AsyncReadExt + Unpin + Send, P: Fn(&str) -> bool>(stream: &mut R, identifier: &str, version: P) -> Result<(), StarterError> {
+pub async fn server_init<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) -> bool>(stream: &mut R, identifier: &str, version: P) -> Result<(), StarterError> {
     read_head(stream, identifier, version, false, false).await?;
     Ok(())
 }
 #[cfg(feature = "compression")]
-pub async fn server_init_with_compress<R: AsyncReadExt + Unpin + Send, P: Fn(&str) -> bool>(stream: &mut R, identifier: &str, version: P) -> Result<(), StarterError> {
+pub async fn server_init_with_compress<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) -> bool>(stream: &mut R, identifier: &str, version: P) -> Result<(), StarterError> {
     read_head(stream, identifier, version, true, false).await?;
     Ok(())
 }
 #[cfg(feature = "encrypt")]
-pub async fn server_init_with_encrypt<R: AsyncReadExt + Unpin + Send, P: Fn(&str) -> bool>(stream: &mut R, identifier: &str, version: P) -> Result<RsaPublicKey, StarterError> {
+pub async fn server_init_with_encrypt<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) -> bool>(stream: &mut R, identifier: &str, version: P) -> Result<RsaPublicKey, StarterError> {
     let mut reader = read_head(stream, identifier, version, false, true).await?;
     let n = rsa::BigUint::from_bytes_le(&reader.read_u8_vec()?);
     let e = rsa::BigUint::from_bytes_le(&reader.read_u8_vec()?);
@@ -135,7 +135,7 @@ pub async fn server_init_with_encrypt<R: AsyncReadExt + Unpin + Send, P: Fn(&str
     Ok(key)
 }
 #[cfg(all(feature = "compression", feature = "encrypt"))]
-pub async fn server_init_with_compress_and_encrypt<R: AsyncReadExt + Unpin + Send, P: Fn(&str) -> bool>(stream: &mut R, identifier: &str, version: P) -> Result<RsaPublicKey, StarterError> {
+pub async fn server_init_with_compress_and_encrypt<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) -> bool>(stream: &mut R, identifier: &str, version: P) -> Result<RsaPublicKey, StarterError> {
     let mut reader = read_head(stream, identifier, version, true, true).await?;
     let n = rsa::BigUint::from_bytes_le(&reader.read_u8_vec()?);
     let e = rsa::BigUint::from_bytes_le(&reader.read_u8_vec()?);
@@ -284,6 +284,20 @@ pub(crate) mod test {
 
         let message = "tester".as_bytes();
         assert_eq!(s.0.encrypt(&s.1, message), c.0.encrypt(&c.1, message));
+        Ok(())
+    }
+
+
+    #[tokio::test]
+    async fn get_version() -> Result<()> {
+        let (mut client, mut server) = create().await?;
+        let c = client_init(&mut client, &"a", &"1").await;
+        let mut version = None;
+        let s = server_init(&mut server, &"a", |v| { version = Some(v.to_string()); v == "1" }).await;
+        server_start(&mut server, s).await?;
+        let version = version.unwrap();
+        client_start(&mut client, c).await?;
+        assert_eq!("1", version);
         Ok(())
     }
 

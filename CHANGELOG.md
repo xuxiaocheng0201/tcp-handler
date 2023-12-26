@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2023-12-26
+
+### Changed
+
+* 自定义版本校验时使用`FnOnce`代替`Fn`，以此从中提取版本。
+
+## [0.3.0] - 2023-12-26
+
 ### Changed
 
 * 重新组织开放方法结构，减少方法名长度。
