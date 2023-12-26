@@ -145,7 +145,7 @@ pub async fn server_start_with_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: 
     let rsa = write_last(stream, last).await?;
     let aes = Aes256Gcm::generate_key(&mut AesRng);
     let nonce = Aes256Gcm::generate_nonce(&mut AesRng);
-    assert_eq!(12, nonce.len());
+    debug_assert_eq!(12, nonce.len());
     let encrypted_aes = rsa.encrypt(&mut RsaRng, Oaep::new::<Sha512>(), &aes)?;
     let cipher = Aes256Gcm::new(&aes);
     let mut writer = BytesMut::new().writer();
@@ -181,13 +181,13 @@ pub async fn client_start_with_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use aes_gcm::aead::Aead;
     use anyhow::Result;
     use tokio::net::{TcpListener, TcpStream};
     use crate::starter::{client_init, client_init_with_encrypt, client_start, client_start_with_encrypt, server_init, server_init_with_encrypt, server_start, server_start_with_encrypt};
 
-    async fn create() -> Result<(TcpStream, TcpStream)> {
+    pub(crate) async fn create() -> Result<(TcpStream, TcpStream)> {
         let addr = "localhost:25564";
         let server = TcpListener::bind(addr).await?;
         let client = TcpStream::connect(addr).await?;
