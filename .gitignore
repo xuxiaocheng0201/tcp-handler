@@ -4,4 +4,11 @@
 !/.gitignore
 !/Cargo.lock
 !/Cargo.toml
+
+### Project ###
 !/src
+!/LICENSE-MIT
+!/LICENSE-APACHE
+!/LICENSE-BSD
+!/README.md
+!/README_zh.md

@@ -3,6 +3,12 @@ name = "tcp-handler"
 version = "0.1.0"
 authors = ["xuxiaocheng <2762267080@qq.com>"]
 edition = "2021"
+description = "Conveniently transfer data in chunk through tokio TCP stream."
+readme = "README.md"
+license = "(MIT or Apache-2.0) and BSD-3"
+repository = "https://github.com/xuxiaocheng0201/tcp-handler/"
+documentation = "https://docs.rs/tcp-handler/"
+categories = ["network-programming"]
 
 [dependencies]
 thiserror = "^1.0"
