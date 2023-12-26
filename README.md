@@ -32,7 +32,7 @@ tcp-handler = "*"
 
 # Example
 
-Directly transfer data. Without encryption:
+Directly transfer data. Without encryption and compression:
 
 ```rust
 use anyhow::Result;

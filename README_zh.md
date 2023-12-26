@@ -32,7 +32,7 @@ tcp-handler = "*"
 
 # 示例
 
-直接传输，不使用加密：
+直接传输，不使用加密和压缩：
 
 ```rust
 use anyhow::Result;
