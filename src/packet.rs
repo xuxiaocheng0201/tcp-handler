@@ -2,7 +2,6 @@ use std::io::Error;
 #[cfg(feature = "encrypt")]
 use aes_gcm::{
     AeadCore, AeadInPlace, Aes256Gcm, Nonce,
-    aead::Aead,
     aead::rand_core::OsRng as AesRng,
     aead::Error as AesGcmError,
 };
@@ -88,64 +87,7 @@ pub async fn recv_with_compress<R: AsyncReadExt + Unpin + Send>(stream: &mut R) 
 }
 
 #[cfg(feature = "encrypt")]
-#[deprecated(since = "0.1.0", note = "Please use `send_with_dynamic_encrypt` instead.")]
-pub async fn send_with_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Bytes, cipher: &AesCipher) -> Result<(), PacketError> {
-    let (cipher, nonce) = cipher;
-    let message = cipher.encrypt(nonce, &*message.to_vec())?;
-    write_packet(stream, &Bytes::from(message)).await
-}
-#[cfg(feature = "encrypt")]
-#[deprecated(since = "0.1.0", note = "Please use `recv_with_dynamic_encrypt` instead.")]
-pub async fn recv_with_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: &AesCipher) -> Result<BytesMut, PacketError> {
-    let (cipher, nonce) = cipher;
-    let bytes = read_packet(stream).await?;
-    let mut message = BytesMut::new();
-    cipher.decrypt_in_place(nonce, &*bytes, &mut message)?;
-    Ok(message)
-}
-
-#[cfg(feature = "encrypt")]
-#[deprecated(since = "0.2.0", note = "Please use `send_with_dynamic_encrypt` instead.")]
-pub async fn client_send_with_dynamic_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Bytes, cipher: AesCipher) -> Result<AesCipher, PacketError> {
-    let (cipher, nonce) = cipher;
-    let mut message = BytesMut::from(message.as_ref());
-    cipher.encrypt_in_place(&nonce, &[], &mut message)?;
-    write_packet(stream, &message.into()).await?;
-    Ok((cipher, nonce))
-}
-#[cfg(feature = "encrypt")]
-#[deprecated(since = "0.2.0", note = "Please use `recv_with_dynamic_encrypt` instead.")]
-pub async fn server_recv_with_dynamic_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: AesCipher) -> Result<(BytesMut, AesCipher), PacketError> {
-    let (cipher, nonce) = cipher;
-    let mut message = read_packet(stream).await?;
-    cipher.decrypt_in_place(&nonce, &[], &mut message)?;
-    Ok((message, (cipher, nonce)))
-}
-#[cfg(feature = "encrypt")]
-#[deprecated(since = "0.2.0", note = "Please use `send_with_dynamic_encrypt` instead.")]
-pub async fn server_send_with_dynamic_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Bytes, cipher: AesCipher) -> Result<AesCipher, PacketError> {
-    let (cipher, nonce) = cipher;
-    let new_nonce = Aes256Gcm::generate_nonce(&mut AesRng);
-    debug_assert_eq!(12, nonce.len());
-    let mut message = BytesMut::from(message.as_ref());
-    cipher.encrypt_in_place(&nonce, &[], &mut message)?;
-    write_packet(stream, &message.into()).await?;
-    stream.write_more(&new_nonce).await?;
-    Ok((cipher, new_nonce))
-}
-#[cfg(feature = "encrypt")]
-#[deprecated(since = "0.2.0", note = "Please use `recv_with_dynamic_encrypt` instead.")]
-pub async fn client_recv_with_dynamic_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: AesCipher) -> Result<(BytesMut, AesCipher), PacketError> {
-    let (cipher, nonce) = cipher;
-    let mut message = read_packet(stream).await?;
-    cipher.decrypt_in_place(&nonce, &[], &mut message)?;
-    let mut new_nonce = [0; 12];
-    stream.read_more(&mut new_nonce).await?;
-    Ok((message, (cipher, Nonce::from(new_nonce))))
-}
-
-#[cfg(feature = "encrypt")]
-pub async fn send_with_dynamic_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Bytes, cipher: AesCipher) -> Result<AesCipher, PacketError> {
+pub async fn send_with_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Bytes, cipher: AesCipher) -> Result<AesCipher, PacketError> {
     let (cipher, nonce) = cipher;
     let new_nonce = Aes256Gcm::generate_nonce(&mut AesRng);
     debug_assert_eq!(12, nonce.len());
@@ -156,7 +98,7 @@ pub async fn send_with_dynamic_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: 
     Ok((cipher, new_nonce))
 }
 #[cfg(feature = "encrypt")]
-pub async fn recv_with_dynamic_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: AesCipher) -> Result<(BytesMut, AesCipher), PacketError> {
+pub async fn recv_with_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: AesCipher) -> Result<(BytesMut, AesCipher), PacketError> {
     let (cipher, nonce) = cipher;
     let mut message = read_packet(stream).await?;
     cipher.decrypt_in_place(&nonce, &[], &mut message)?;
@@ -167,7 +109,7 @@ pub async fn recv_with_dynamic_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &
 }
 
 #[cfg(all(feature = "compression", feature = "encrypt"))]
-pub async fn send_with_compress_and_dynamic_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Bytes, cipher: AesCipher, level: Compression) -> Result<AesCipher, PacketError> {
+pub async fn send_with_compress_and_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Bytes, cipher: AesCipher, level: Compression) -> Result<AesCipher, PacketError> {
     let (cipher, nonce) = cipher;
     let new_nonce = Aes256Gcm::generate_nonce(&mut AesRng);
     debug_assert_eq!(12, nonce.len());
@@ -184,7 +126,7 @@ pub async fn send_with_compress_and_dynamic_encrypt<W: AsyncWriteExt + Unpin + S
     Ok((cipher, new_nonce))
 }
 #[cfg(all(feature = "compression", feature = "encrypt"))]
-pub async fn recv_with_compress_and_dynamic_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: AesCipher) -> Result<(BytesMut, AesCipher), PacketError> {
+pub async fn recv_with_compress_and_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: AesCipher) -> Result<(BytesMut, AesCipher), PacketError> {
     let (cipher, nonce) = cipher;
     let mut bytes = read_packet(stream).await?;
     cipher.decrypt_in_place(&nonce, &[], &mut bytes)?;
@@ -205,7 +147,7 @@ mod test {
     use bytes::{Buf, BufMut, BytesMut};
     use flate2::Compression;
     use variable_len_reader::{VariableReadable, VariableWritable};
-    use crate::packet::{recv, recv_with_compress, recv_with_compress_and_dynamic_encrypt, recv_with_dynamic_encrypt, send, send_with_compress, send_with_compress_and_dynamic_encrypt, send_with_dynamic_encrypt};
+    use crate::packet::{recv, recv_with_compress, recv_with_compress_and_encrypt, recv_with_encrypt, send, send_with_compress, send_with_compress_and_encrypt, send_with_encrypt};
     use crate::starter::{client_init, client_init_with_compress, client_init_with_compress_and_encrypt, client_init_with_encrypt, client_start, client_start_with_compress, client_start_with_compress_and_encrypt, client_start_with_encrypt, server_init, server_init_with_compress, server_init_with_compress_and_encrypt, server_init_with_encrypt, server_start, server_start_with_compress, server_start_with_compress_and_encrypt, server_start_with_encrypt};
     use crate::starter::test::create;
 
@@ -256,17 +198,17 @@ mod test {
 
         let mut writer = BytesMut::new().writer();
         writer.write_string("hello server.")?;
-        let client_cipher = send_with_dynamic_encrypt(&mut client, &writer.into_inner().into(), client_cipher).await?;
+        let client_cipher = send_with_encrypt(&mut client, &writer.into_inner().into(), client_cipher).await?;
 
-        let (reader, server_cipher) = recv_with_dynamic_encrypt(&mut server, server_cipher).await?;
+        let (reader, server_cipher) = recv_with_encrypt(&mut server, server_cipher).await?;
         let message = reader.reader().read_string()?;
         assert_eq!("hello server.", message);
 
         let mut writer = BytesMut::new().writer();
         writer.write_string("hello client.")?;
-        let _server_cipher = send_with_dynamic_encrypt(&mut client, &writer.into_inner().into(), server_cipher).await?;
+        let _server_cipher = send_with_encrypt(&mut client, &writer.into_inner().into(), server_cipher).await?;
 
-        let (reader, _client_cipher) = recv_with_dynamic_encrypt(&mut server, client_cipher).await?;
+        let (reader, _client_cipher) = recv_with_encrypt(&mut server, client_cipher).await?;
         let message = reader.reader().read_string()?;
         assert_eq!("hello client.", message);
 
@@ -283,17 +225,17 @@ mod test {
 
         let mut writer = BytesMut::new().writer();
         writer.write_string("hello server.")?;
-        let client_cipher = send_with_compress_and_dynamic_encrypt(&mut client, &writer.into_inner().into(), client_cipher, Compression::default()).await?;
+        let client_cipher = send_with_compress_and_encrypt(&mut client, &writer.into_inner().into(), client_cipher, Compression::default()).await?;
 
-        let (reader, server_cipher) = recv_with_compress_and_dynamic_encrypt(&mut server, server_cipher).await?;
+        let (reader, server_cipher) = recv_with_compress_and_encrypt(&mut server, server_cipher).await?;
         let message = reader.reader().read_string()?;
         assert_eq!("hello server.", message);
 
         let mut writer = BytesMut::new().writer();
         writer.write_string("hello client.")?;
-        let _server_cipher = send_with_compress_and_dynamic_encrypt(&mut client, &writer.into_inner().into(), server_cipher, Compression::default()).await?;
+        let _server_cipher = send_with_compress_and_encrypt(&mut client, &writer.into_inner().into(), server_cipher, Compression::default()).await?;
 
-        let (reader, _client_cipher) = recv_with_compress_and_dynamic_encrypt(&mut server, client_cipher).await?;
+        let (reader, _client_cipher) = recv_with_compress_and_encrypt(&mut server, client_cipher).await?;
         let message = reader.reader().read_string()?;
         assert_eq!("hello client.", message);
 

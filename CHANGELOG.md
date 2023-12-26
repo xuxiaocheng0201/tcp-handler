@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+* 重新组织开放方法结构，减少方法名长度。
+
+### Removed
+
+* 移除上两个版本中多余的加密方法。
+
+## [0.2.0] - 2023-12-26
+
 ### Added
 
 * 支持压缩流。
