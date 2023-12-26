@@ -1,17 +1,18 @@
 use std::io::Error;
 #[cfg(feature = "encrypt")]
 use aes_gcm::{
-    AesGcm, Nonce,
+    AeadCore, Aes256Gcm, Nonce,
     aead::Aead,
-    aead::generic_array::typenum::U12,
+    aead::rand_core::OsRng as AesRng,
     aead::Error as AesGcmError,
-    aes::Aes256,
 };
 use bytes::{Bytes, BytesMut};
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use variable_len_reader::asynchronous::{AsyncVariableReadable, AsyncVariableWritable};
 use crate::config::get_max_packet_size;
+#[cfg(feature = "encrypt")]
+use crate::starter::AesCipher;
 
 #[derive(Error, Debug)]
 pub enum PacketError {
@@ -56,16 +57,55 @@ pub async fn recv<R: AsyncReadExt + Unpin + Send>(stream: &mut R) -> Result<Byte
 }
 
 #[cfg(feature = "encrypt")]
-pub async fn send_with_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &[u8], cipher: &(AesGcm<Aes256, U12>, Nonce<U12>)) -> Result<(), PacketError> {
+#[deprecated(since = "0.1.0", note = "Please use `send_with_dynamic_encrypt` instead.")]
+pub async fn send_with_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &[u8], cipher: &AesCipher) -> Result<(), PacketError> {
     let (cipher, nonce) = cipher;
     let message = cipher.encrypt(nonce, message)?;
     write_packet(stream, &message).await
 }
 
 #[cfg(feature = "encrypt")]
-pub async fn recv_with_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: &(AesGcm<Aes256, U12>, Nonce<U12>)) -> Result<Bytes, PacketError> {
+#[deprecated(since = "0.1.0", note = "Please use `recv_with_dynamic_encrypt` instead.")]
+pub async fn recv_with_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: &AesCipher) -> Result<Bytes, PacketError> {
     let (cipher, nonce) = cipher;
     let message = read_packet(stream).await?;
     let message = cipher.decrypt(nonce, &*message)?;
     Ok(Bytes::from(message))
+}
+
+#[cfg(feature = "encrypt")]
+pub async fn client_send_with_dynamic_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &[u8], cipher: AesCipher) -> Result<AesCipher, PacketError> {
+    let (cipher, nonce) = cipher;
+    let message = cipher.encrypt(&nonce, message)?;
+    write_packet(stream, &message).await?;
+    Ok((cipher, nonce))
+}
+
+#[cfg(feature = "encrypt")]
+pub async fn server_recv_with_dynamic_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: AesCipher) -> Result<(Bytes, AesCipher), PacketError> {
+    let (cipher, nonce) = cipher;
+    let message = read_packet(stream).await?;
+    let message = cipher.decrypt(&nonce, &*message)?;
+    Ok((Bytes::from(message), (cipher, nonce)))
+}
+
+#[cfg(feature = "encrypt")]
+pub async fn server_send_with_dynamic_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &[u8], cipher: AesCipher) -> Result<AesCipher, PacketError> {
+    let (cipher, nonce) = cipher;
+    let new_nonce = Aes256Gcm::generate_nonce(&mut AesRng);
+    assert_eq!(12, nonce.len());
+    let message = cipher.encrypt(&nonce, message)?;
+    write_packet(stream, &message).await?;
+    stream.write_more(&new_nonce).await?;
+    Ok((cipher, new_nonce))
+}
+
+#[cfg(feature = "encrypt")]
+pub async fn client_recv_with_dynamic_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: AesCipher) -> Result<(Bytes, AesCipher), PacketError> {
+    let (cipher, nonce) = cipher;
+    let message = read_packet(stream).await?;
+    let message = cipher.decrypt(&nonce, &*message)?;
+    let mut new_nonce = [0; 12];
+    stream.read_more(&mut new_nonce).await?;
+    Ok((Bytes::from(message), (cipher, Nonce::from(new_nonce))))
 }

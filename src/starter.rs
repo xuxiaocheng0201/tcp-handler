@@ -3,6 +3,7 @@ use std::io::Error;
 use aes_gcm::{
     AeadCore, Aes256Gcm, AesGcm, KeyInit, Nonce,
     aead::generic_array::typenum::U12,
+    aead::rand_core::OsRng as AesRng,
     aes::Aes256,
     aes::cipher::InvalidLength,
 };
@@ -11,7 +12,7 @@ use bytes::buf::{Reader, Writer};
 #[cfg(feature = "encrypt")]
 use rsa::{
     Oaep, RsaPrivateKey, RsaPublicKey,
-    rand_core::OsRng,
+    rand_core::OsRng as RsaRng,
 };
 #[cfg(feature = "encrypt")]
 use sha2::Sha512;
@@ -58,6 +59,9 @@ pub enum StarterError {
 /// The last two bytes is the version of the protocol.
 static MAGIC_BYTES: [u8; 6] = [208, 8, 166, 104, 0, 0];
 
+#[cfg(feature = "encrypt")]
+pub type AesCipher = (AesGcm<Aes256, U12>, Nonce<U12>);
+
 #[inline]
 async fn write_head<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identifier: &str, version: &str) -> Result<Writer<BytesMut>, StarterError> {
     stream.write_more(&MAGIC_BYTES).await?;
@@ -75,7 +79,7 @@ pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identi
 #[cfg(feature = "encrypt")]
 pub async fn client_init_with_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identifier: &str, version: &str) -> Result<RsaPrivateKey, StarterError> {
     use rsa::traits::PublicKeyParts;
-    let key = RsaPrivateKey::new(&mut OsRng, 2048)?;
+    let key = RsaPrivateKey::new(&mut RsaRng, 2048)?;
     let mut writer = write_head(stream, identifier, version).await?;
     writer.write_u8_vec(&key.n().to_bytes_le())?;
     writer.write_u8_vec(&key.e().to_bytes_le())?;
@@ -137,12 +141,12 @@ pub async fn server_start<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, last:
     Ok(())
 }
 #[cfg(feature = "encrypt")]
-pub async fn server_start_with_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, last: Result<RsaPublicKey, StarterError>) -> Result<(AesGcm<Aes256, U12>, Nonce<U12>), StarterError> {
+pub async fn server_start_with_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, last: Result<RsaPublicKey, StarterError>) -> Result<AesCipher, StarterError> {
     let rsa = write_last(stream, last).await?;
-    let aes = Aes256Gcm::generate_key(&mut OsRng);
-    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let aes = Aes256Gcm::generate_key(&mut AesRng);
+    let nonce = Aes256Gcm::generate_nonce(&mut AesRng);
     assert_eq!(12, nonce.len());
-    let encrypted_aes = rsa.encrypt(&mut OsRng, Oaep::new::<Sha512>(), &aes)?;
+    let encrypted_aes = rsa.encrypt(&mut RsaRng, Oaep::new::<Sha512>(), &aes)?;
     let cipher = Aes256Gcm::new(&aes);
     let mut writer = BytesMut::new().writer();
     writer.write_u8_vec(&encrypted_aes)?;
@@ -164,7 +168,7 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
     read_last(stream, last).await
 }
 #[cfg(feature = "encrypt")]
-pub async fn client_start_with_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: Result<RsaPrivateKey, StarterError>) -> Result<(AesGcm<Aes256, U12>, Nonce<U12>), StarterError> {
+pub async fn client_start_with_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: Result<RsaPrivateKey, StarterError>) -> Result<AesCipher, StarterError> {
     let rsa = read_last(stream, last).await?;
     let mut reader = read_packet(stream).await?.reader();
     let encrypted_aes = reader.read_u8_vec()?;
