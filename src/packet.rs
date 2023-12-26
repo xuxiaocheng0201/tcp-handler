@@ -7,6 +7,12 @@ use aes_gcm::{
     aead::Error as AesGcmError,
 };
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+#[cfg(feature = "compression")]
+use flate2::{
+    Compression,
+    write::DeflateEncoder,
+    write::DeflateDecoder,
+};
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use variable_len_reader::asynchronous::{AsyncVariableReadable, AsyncVariableWritable};
@@ -57,6 +63,28 @@ pub async fn send<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Byt
 }
 pub async fn recv<R: AsyncReadExt + Unpin + Send>(stream: &mut R) -> Result<BytesMut, PacketError> {
     read_packet(stream).await
+}
+
+#[cfg(feature = "compression")]
+pub async fn send_with_compress<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Bytes, level: Compression) -> Result<(), PacketError> {
+    let mut message = message.clone();
+    let mut encoder = DeflateEncoder::new(BytesMut::new().writer(), level);
+    while message.has_remaining() {
+        let len = encoder.write_more(message.chunk())?;
+        message.advance(len);
+    }
+    let bytes = encoder.finish()?.into_inner();
+    write_packet(stream, &bytes.into()).await
+}
+#[cfg(feature = "compression")]
+pub async fn recv_with_compress<R: AsyncReadExt + Unpin + Send>(stream: &mut R) -> Result<BytesMut, PacketError> {
+    let mut bytes = read_packet(stream).await?;
+    let mut decoder = DeflateDecoder::new(BytesMut::new().writer());
+    while bytes.has_remaining() {
+        let len = decoder.write_more(bytes.chunk())?;
+        bytes.advance(len);
+    }
+    Ok(decoder.finish()?.into_inner())
 }
 
 #[cfg(feature = "encrypt")]
@@ -116,9 +144,10 @@ pub async fn client_recv_with_dynamic_encrypt<R: AsyncReadExt + Unpin + Send>(st
 mod test {
     use anyhow::Result;
     use bytes::{Buf, BufMut, BytesMut};
+    use flate2::Compression;
     use variable_len_reader::{VariableReadable, VariableWritable};
-    use crate::packet::{client_recv_with_dynamic_encrypt, client_send_with_dynamic_encrypt, recv, send, server_recv_with_dynamic_encrypt, server_send_with_dynamic_encrypt};
-    use crate::starter::{client_init, client_init_with_encrypt, client_start, client_start_with_encrypt, server_init, server_init_with_encrypt, server_start, server_start_with_encrypt};
+    use crate::packet::{client_recv_with_dynamic_encrypt, client_send_with_dynamic_encrypt, recv, recv_with_compress, send, send_with_compress, server_recv_with_dynamic_encrypt, server_send_with_dynamic_encrypt};
+    use crate::starter::{client_init, client_init_with_compress, client_init_with_encrypt, client_start, client_start_with_compress, client_start_with_encrypt, server_init, server_init_with_compress, server_init_with_encrypt, server_start, server_start_with_compress, server_start_with_encrypt};
     use crate::starter::test::create;
 
     #[tokio::test]
@@ -136,6 +165,25 @@ mod test {
         let mut reader = recv(&mut server).await?.reader();
         let message = reader.read_string()?;
         assert_eq!("hello server.", message);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn compress() -> Result<()> {
+        let (mut client, mut server) = create().await?;
+        let c = client_init_with_compress(&mut client, &"a", &"1").await;
+        let s = server_init_with_compress(&mut server, &"a", |v| v == "1").await;
+        server_start_with_compress(&mut server, s).await?;
+        client_start_with_compress(&mut client, c).await?;
+
+        let mut writer = BytesMut::new().writer();
+        writer.write_string("hello server.")?;
+        send_with_compress(&mut client, &writer.into_inner().into(), Compression::default()).await?;
+
+        let reader = recv_with_compress(&mut server).await?;
+        let message = reader.reader().read_string()?;
+        assert_eq!("hello server.", message);
+
         Ok(())
     }
 
