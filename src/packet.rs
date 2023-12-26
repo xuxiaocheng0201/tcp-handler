@@ -16,7 +16,7 @@ use flate2::{
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use variable_len_reader::asynchronous::{AsyncVariableReadable, AsyncVariableWritable};
-use variable_len_reader::VariableWritable;
+use variable_len_reader::{VariableReadable, VariableWritable};
 use crate::config::get_max_packet_size;
 #[cfg(feature = "encrypt")]
 use crate::starter::AesCipher;
@@ -160,9 +160,43 @@ pub async fn recv_with_dynamic_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &
     let (cipher, nonce) = cipher;
     let mut message = read_packet(stream).await?;
     cipher.decrypt_in_place(&nonce, &[], &mut message)?;
+    let mut reader = message.reader();
     let mut new_nonce = [0; 12];
-    message.copy_to_slice(&mut new_nonce);
-    Ok((message, (cipher, Nonce::from(new_nonce))))
+    reader.read_more(&mut new_nonce)?;
+    Ok((reader.into_inner(), (cipher, Nonce::from(new_nonce))))
+}
+
+#[cfg(all(feature = "compression", feature = "encrypt"))]
+pub async fn send_with_compress_and_dynamic_encrypt<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Bytes, cipher: AesCipher, level: Compression) -> Result<AesCipher, PacketError> {
+    let (cipher, nonce) = cipher;
+    let new_nonce = Aes256Gcm::generate_nonce(&mut AesRng);
+    debug_assert_eq!(12, nonce.len());
+    let mut message = message.clone();
+    let mut encoder = DeflateEncoder::new(BytesMut::new().writer(), level);
+    encoder.write_more(&new_nonce)?;
+    while message.has_remaining() {
+        let len = encoder.write_more(message.chunk())?;
+        message.advance(len);
+    }
+    let mut bytes = encoder.finish()?.into_inner();
+    cipher.encrypt_in_place(&nonce, &[], &mut bytes)?;
+    write_packet(stream, &bytes.into()).await?;
+    Ok((cipher, new_nonce))
+}
+#[cfg(all(feature = "compression", feature = "encrypt"))]
+pub async fn recv_with_compress_and_dynamic_encrypt<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: AesCipher) -> Result<(BytesMut, AesCipher), PacketError> {
+    let (cipher, nonce) = cipher;
+    let mut bytes = read_packet(stream).await?;
+    cipher.decrypt_in_place(&nonce, &[], &mut bytes)?;
+    let mut decoder = DeflateDecoder::new(BytesMut::new().writer());
+    while bytes.has_remaining() {
+        let len = decoder.write_more(bytes.chunk())?;
+        bytes.advance(len);
+    }
+    let mut reader = decoder.finish()?.into_inner().reader();
+    let mut new_nonce = [0; 12];
+    reader.read_more(&mut new_nonce)?;
+    Ok((reader.into_inner(), (cipher, Nonce::from(new_nonce))))
 }
 
 #[cfg(test)]
@@ -171,8 +205,8 @@ mod test {
     use bytes::{Buf, BufMut, BytesMut};
     use flate2::Compression;
     use variable_len_reader::{VariableReadable, VariableWritable};
-    use crate::packet::{recv, recv_with_compress, recv_with_dynamic_encrypt, send, send_with_compress, send_with_dynamic_encrypt};
-    use crate::starter::{client_init, client_init_with_compress, client_init_with_encrypt, client_start, client_start_with_compress, client_start_with_encrypt, server_init, server_init_with_compress, server_init_with_encrypt, server_start, server_start_with_compress, server_start_with_encrypt};
+    use crate::packet::{recv, recv_with_compress, recv_with_compress_and_dynamic_encrypt, recv_with_dynamic_encrypt, send, send_with_compress, send_with_compress_and_dynamic_encrypt, send_with_dynamic_encrypt};
+    use crate::starter::{client_init, client_init_with_compress, client_init_with_compress_and_encrypt, client_init_with_encrypt, client_start, client_start_with_compress, client_start_with_compress_and_encrypt, client_start_with_encrypt, server_init, server_init_with_compress, server_init_with_compress_and_encrypt, server_init_with_encrypt, server_start, server_start_with_compress, server_start_with_compress_and_encrypt, server_start_with_encrypt};
     use crate::starter::test::create;
 
     #[tokio::test]
@@ -239,5 +273,30 @@ mod test {
         Ok(())
     }
 
+    #[tokio::test]
+    async fn compress_and_encrypt() -> Result<()> {
+        let (mut client, mut server) = create().await?;
+        let c = client_init_with_compress_and_encrypt(&mut client, &"a", &"1").await;
+        let s = server_init_with_compress_and_encrypt(&mut server, &"a", |v| v == "1").await;
+        let server_cipher = server_start_with_compress_and_encrypt(&mut server, s).await?;
+        let client_cipher = client_start_with_compress_and_encrypt(&mut client, c).await?;
 
+        let mut writer = BytesMut::new().writer();
+        writer.write_string("hello server.")?;
+        let client_cipher = send_with_compress_and_dynamic_encrypt(&mut client, &writer.into_inner().into(), client_cipher, Compression::default()).await?;
+
+        let (reader, server_cipher) = recv_with_compress_and_dynamic_encrypt(&mut server, server_cipher).await?;
+        let message = reader.reader().read_string()?;
+        assert_eq!("hello server.", message);
+
+        let mut writer = BytesMut::new().writer();
+        writer.write_string("hello client.")?;
+        let _server_cipher = send_with_compress_and_dynamic_encrypt(&mut client, &writer.into_inner().into(), server_cipher, Compression::default()).await?;
+
+        let (reader, _client_cipher) = recv_with_compress_and_dynamic_encrypt(&mut server, client_cipher).await?;
+        let message = reader.reader().read_string()?;
+        assert_eq!("hello client.", message);
+
+        Ok(())
+    }
 }

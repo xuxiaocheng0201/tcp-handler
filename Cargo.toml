@@ -9,6 +9,7 @@ license = "(MIT OR Apache-2.0) AND BSD-3-Clause"
 repository = "https://github.com/xuxiaocheng0201/tcp-handler/"
 documentation = "https://docs.rs/tcp-handler/"
 categories = ["network-programming"]
+keywords = ["tcp", "tokio", "chunk", "io"]
 
 [dependencies]
 thiserror = "^1.0"

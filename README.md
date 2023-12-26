@@ -75,7 +75,7 @@ Transfer message with encrypted protocol:
 ```rust
 use anyhow::Result;
 use bytes::{Buf, BufMut, BytesMut};
-use tcp_handler::packet::{client_recv_with_dynamic_encrypt, client_send_with_dynamic_encrypt, server_recv_with_dynamic_encrypt, server_send_with_dynamic_encrypt};
+use tcp_handler::packet::{recv_with_dynamic_encrypt, send_with_dynamic_encrypt};
 use tcp_handler::starter::{client_init_with_encrypt, client_start_with_encrypt, server_init_with_encrypt, server_start_with_encrypt};
 use variable_len_reader::{VariableReadable, VariableWritable};
 
@@ -96,20 +96,20 @@ async fn main() -> Result<()> {
     // Send message in client side.
     let mut writer = BytesMut::new().writer();
     writer.write_string("hello server.")?;
-    let client_cipher = client_send_with_dynamic_encrypt(&mut client, &writer.into_inner(), client_cipher).await?;
+    let client_cipher = send_with_dynamic_encrypt(&mut client, &writer.into_inner(), client_cipher).await?;
 
     // Receive message in server side.
-    let (reader, server_cipher) = server_recv_with_dynamic_encrypt(&mut server, server_cipher).await?;
+    let (reader, server_cipher) = recv_with_dynamic_encrypt(&mut server, server_cipher).await?;
     let message = reader.reader().read_string()?;
     assert_eq!("hello server.", message);
 
     // Send message in server side.
     let mut writer = BytesMut::new().writer();
     writer.write_string("hello client.")?;
-    let _server_cipher = server_send_with_dynamic_encrypt(&mut client, &writer.into_inner(), server_cipher).await?;
+    let _server_cipher = send_with_dynamic_encrypt(&mut client, &writer.into_inner(), server_cipher).await?;
 
     // Receive message in client side.
-    let (reader, _client_cipher) = client_recv_with_dynamic_encrypt(&mut server, client_cipher).await?;
+    let (reader, _client_cipher) = recv_with_dynamic_encrypt(&mut server, client_cipher).await?;
     let message = reader.reader().read_string()?;
     assert_eq!("hello client.", message);
 
