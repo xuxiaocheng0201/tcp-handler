@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 * 添加`client_init`速度极慢的提示和解决办法。
+* 重新组织代码结构。
+* 添加文档。
 
 ## [0.3.2] - 2023-12-27
 

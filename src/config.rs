@@ -11,8 +11,6 @@
 //! # }
 //! ```
 
-use std::hint::spin_loop;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::RwLock;
 
 /// Global configuration.
@@ -89,7 +87,7 @@ pub fn set_config(config: Config) {
 /// ```
 #[inline]
 pub fn get_config() -> Config {
-    let mut c = CONFIG.read().unwrap();
+    let c = CONFIG.read().unwrap();
     (*c).clone()
 }
 
@@ -99,7 +97,7 @@ pub fn get_config() -> Config {
 /// ```
 #[inline]
 pub fn get_max_packet_size() -> usize {
-    let mut c = CONFIG.read().unwrap();
+    let c = CONFIG.read().unwrap();
     (*c).max_packet_size
 }
 
