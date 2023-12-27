@@ -1,3 +1,5 @@
+//! Common utilities for this crate.
+
 use std::io::Error;
 use aead::consts::U12;
 use aead::Error as AesGcmError;
@@ -12,12 +14,23 @@ use variable_len_reader::asynchronous::{AsyncVariableReadable, AsyncVariableWrit
 use variable_len_reader::{VariableReadable, VariableWritable};
 use crate::config::get_max_packet_size;
 
+/// Error in send/recv message.
 #[derive(Error, Debug)]
 pub enum PacketError {
+    /// The packet size is larger than the maximum allowed packet size.
+    /// This is due to you sending too much data at once,
+    /// resulting in triggering memory safety limit
+    ///
+    /// You can reduce the size of data sent each time.
+    /// Or you can change the maximum packet size by call `tcp_handler::config::set_config`.
     #[error("Packet size {0} is larger than the maximum allowed packet size {1}.")]
     TooLarge(usize, usize),
-    #[error("During io packet.")]
+
+    /// During io bytes.
+    #[error("During io bytes.")]
     IO(#[from] Error),
+
+    /// During encrypting/decrypting bytes.
     #[cfg(feature = "encrypt")]
     #[error("During encrypting/decrypting bytes.")]
     AES(#[from] AesGcmError)
@@ -51,29 +64,66 @@ pub(crate) async fn read_packet<R: AsyncReadExt + Unpin + Send>(stream: &mut R) 
 }
 
 
+/// Error in init/start protocol.
 #[derive(Error, Debug)]
 pub enum StarterError {
+    /// Magic bytes isn't matched.
+    /// Please confirm that you are connected to the correct address.
     #[error("Invalid stream. MAGIC is not matched.")]
     InvalidStream(),
-    #[error("Current state connection is not supported. compression: {0}, encryption: {1}")]
-    ClientInvalidState(bool, bool), // Throw in server side.
+
+    /// Incompatible tcp-handler protocol.
+    /// Please check whether you use the same protocol between client and server.
+    /// This error will be thrown in **server** side.
+    #[error("Incompatible protocol. compression: {0}, encryption: {1}")]
+    ClientInvalidProtocol(bool, bool),
+
+    /// Invalid application identifier.
+    /// Please confirm that you are connected to the correct application,
+    /// or that there are no spelling errors in the server and client identifiers.
+    /// This error will be thrown in **server** side.
     #[error("Invalid identifier. received: {0}")]
-    ClientInvalidIdentifier(String), // Throw in server side.
+    ClientInvalidIdentifier(String),
+
+    /// Invalid application version.
+    /// This is usually caused by the low version of the client application.
+    /// This error will be thrown in **server** side.
     #[error("Invalid version. received: {0}")]
-    ClientInvalidVersion(String), // Throw in server side.
-    #[error("Current state connection is not supported.")]
-    ServerInvalidState(), // Throw in client side.
+    ClientInvalidVersion(String),
+
+    /// Incompatible tcp-handler protocol.
+    /// Please check whether you use the same protocol between client and server.
+    /// This error will be thrown in **client** side.
+    #[error("Incompatible protocol.")]
+    ServerInvalidProtocol(),
+
+    /// Invalid application identifier.
+    /// Please confirm that you are connected to the correct application,
+    /// or that there are no spelling errors in the server and client identifiers.
+    /// This error will be thrown in **client** side.
     #[error("Invalid identifier.")]
-    ServerInvalidIdentifier(), // Throw in client side.
+    ServerInvalidIdentifier(),
+
+    /// Invalid application version.
+    /// This is usually caused by the low version of the client application.
+    /// This error will be thrown in **client** side.
     #[error("Invalid version.")]
-    ServerInvalidVersion(), // Throw in client side.
+    ServerInvalidVersion(),
+
+    /// During io bytes.
     #[error("During io bytes.")]
     IO(#[from] Error),
+
+    /// During reading/writing packet.
     #[error("During reading/writing packet.")]
     Packet(#[from] PacketError),
+
+    /// During generating/encrypting/decrypting rsa key.
     #[cfg(feature = "encrypt")]
     #[error("During generating/encrypting/decrypting rsa key.")]
     RSA(#[from] rsa::Error),
+
+    /// During generating/encrypting/decrypting aes key.
     #[cfg(feature = "encrypt")]
     #[error("During generating/encrypting/decrypting aes key.")]
     AES(#[from] InvalidLength),
@@ -90,6 +140,7 @@ static MAGIC_BYTES: [u8; 6] = [208, 8, 166, 104, 0, 0];
 
 #[cfg(feature = "encrypt")]
 /// The cipher in encryption mode.
+/// You **must** update this value after each call to the send/recv function.
 pub type AesCipher = (AesGcm<Aes256, U12>, Nonce<U12>);
 
 #[inline]
@@ -109,7 +160,7 @@ pub(crate) async fn read_head<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) ->
     if magic != MAGIC_BYTES { return Err(StarterError::InvalidStream()); }
     let mut reader = read_packet(stream).await?.reader();
     let (read_compression, read_encryption) = reader.read_bools_2()?;
-    if read_compression != compression || read_encryption != encryption { return Err(StarterError::ClientInvalidState(read_compression, read_encryption)); }
+    if read_compression != compression || read_encryption != encryption { return Err(StarterError::ClientInvalidProtocol(read_compression, read_encryption)); }
     let read_identifier = reader.read_string()?;
     if read_identifier != identifier { return Err(StarterError::ClientInvalidIdentifier(read_identifier)); }
     let read_version = reader.read_string()?;
@@ -122,7 +173,7 @@ pub(crate) async fn write_last<W: AsyncWriteExt + Unpin + Send, E>(stream: &mut 
     match last {
         Err(e) => {
             match e {
-                StarterError::ClientInvalidState(_, _) => { stream.write_bools_3(false, false, false).await?; }
+                StarterError::ClientInvalidProtocol(_, _) => { stream.write_bools_3(false, false, false).await?; }
                 StarterError::ClientInvalidIdentifier(_) => { stream.write_bools_3(true, false, false).await?; }
                 StarterError::ClientInvalidVersion(_) => { stream.write_bools_3(true, true, false).await?; }
                 _ => {}
@@ -142,7 +193,7 @@ pub(crate) async fn write_last<W: AsyncWriteExt + Unpin + Send, E>(stream: &mut 
 pub(crate) async fn read_last<R: AsyncReadExt + Unpin + Send, E>(stream: &mut R, last: Result<E, StarterError>) -> Result<E, StarterError> {
     let k = last?;
     let (state, identifier, version) = stream.read_bools_3().await?;
-    if !state { return Err(StarterError::ServerInvalidState()) }
+    if !state { return Err(StarterError::ServerInvalidProtocol()) }
     if !identifier { return Err(StarterError::ServerInvalidIdentifier()) }
     if !version { return Err(StarterError::ServerInvalidVersion()) }
     Ok(k)
