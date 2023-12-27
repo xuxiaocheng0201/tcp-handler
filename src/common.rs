@@ -42,14 +42,14 @@ fn check_bytes_len(len: usize) -> Result<(), PacketError> {
     if len > config { Err(PacketError::TooLarge(len, config)) } else { Ok(()) }
 }
 
-//! ```text
+/// ```text
 ///   ┌─ Packet length (in varint)
 ///   │    ┌─ Packet message
 ///   v    v
-//! ┌────┬────────┐
-//! │ ** │ ****** │
-//! └────┴────────┘
-//! ```
+/// ┌────┬────────┐
+/// │ ** │ ****** │
+/// └────┴────────┘
+/// ```
 pub(crate) async fn write_packet<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, bytes: &Bytes) -> Result<(), PacketError> {
     let mut bytes = bytes.clone();
     check_bytes_len(bytes.remaining())?;
