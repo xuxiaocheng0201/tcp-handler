@@ -31,6 +31,19 @@ tcp-handler = "~0.3"
 ```
 
 
+# 提示
+
+如果在debug模式中，使用加密模式的`client_init`速度极慢，
+请在客户端侧的`Cargo.toml`中添加：
+
+```toml
+[profile.dev.package.num-bigint-dig]
+opt-level = 3 # 加快rsa密钥生成
+```
+
+这是在[rsa](https://crates.io/crates/rsa)库中出现的问题。详见[讨论](https://github.com/RustCrypto/RSA/issues/29)。
+
+
 # 示例
 
 直接传输，不使用加密和压缩：

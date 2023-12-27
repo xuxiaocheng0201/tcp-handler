@@ -31,6 +31,19 @@ tcp-handler = "~0.3"
 ```
 
 
+# Note
+
+If `client_init` using encryption mode is extremely slow in debug mode,
+please add this to your `Cargo.toml` in client side:
+
+```toml
+[profile.dev.package.num-bigint-dig]
+opt-level = 3 # Speed up rsa key gen.
+```
+
+This is an [issue](https://github.com/RustCrypto/RSA/issues/29) in [rsa](https://crates.io/crates/rsa) crate.
+
+
 # Example
 
 Directly transfer data. Without encryption and compression:
