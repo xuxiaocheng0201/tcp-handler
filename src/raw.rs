@@ -119,6 +119,7 @@ pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identi
 ///     server_start(&mut server, s_init).await?;
 ///     let version = version.unwrap();
 ///     // Now the version is got.
+///     let _ = version;
 ///     Ok(())
 /// }
 /// ```
