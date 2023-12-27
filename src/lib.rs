@@ -5,6 +5,9 @@ pub mod config;
 mod packet;
 mod starter;
 
+#[cfg(feature = "encrypt")]
+pub use crate::starter::AesCipher;
+
 pub mod raw {
     pub use crate::starter::client_init;
     pub use crate::starter::server_init;
@@ -49,4 +52,10 @@ pub extern crate variable_len_reader;
 #[cfg(feature = "compression")]
 pub extern crate flate2;
 #[cfg(feature = "encrypt")]
+pub extern crate rsa;
+#[cfg(feature = "encrypt")]
+pub extern crate aead;
+#[cfg(feature = "encrypt")]
 pub extern crate aes_gcm;
+#[cfg(feature = "encrypt")]
+pub extern crate sha2;

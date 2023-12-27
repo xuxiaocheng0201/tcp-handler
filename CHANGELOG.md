@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2023-12-27
+
+### Changed
+
+* 开放更多extern。
+
+### Fixed
+
+* 开放`AesCipher`类型。
+
 ## [0.3.1] - 2023-12-26
 
 ### Changed

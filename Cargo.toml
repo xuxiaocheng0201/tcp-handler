@@ -1,6 +1,6 @@
 [package]
 name = "tcp-handler"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["xuxiaocheng <2762267080@qq.com>"]
 edition = "2021"
 description = "Conveniently transfer data in chunk through tokio TCP stream."
@@ -9,7 +9,7 @@ license = "(MIT OR Apache-2.0) AND BSD-3-Clause"
 repository = "https://github.com/xuxiaocheng0201/tcp-handler/"
 documentation = "https://docs.rs/tcp-handler/"
 categories = ["network-programming"]
-keywords = ["tcp", "tokio", "chunk", "io"]
+keywords = ["tcp", "tokio", "bytes", "io", "network"]
 
 [dependencies]
 thiserror = "^1.0"
