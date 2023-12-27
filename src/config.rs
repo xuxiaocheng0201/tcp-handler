@@ -90,7 +90,7 @@ pub fn set_config(config: Config) {
 #[inline]
 pub fn get_config() -> Config {
     let mut c = CONFIG.read().unwrap();
-    *c.clone()
+    (*c).clone()
 }
 
 /// A cheaper shortcut of
@@ -100,7 +100,7 @@ pub fn get_config() -> Config {
 #[inline]
 pub fn get_max_packet_size() -> usize {
     let mut c = CONFIG.read().unwrap();
-    *c.max_packet_size
+    (*c).max_packet_size
 }
 
 #[cfg(test)]

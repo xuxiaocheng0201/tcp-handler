@@ -60,6 +60,7 @@ pub enum StarterError {
 static MAGIC_BYTES: [u8; 6] = [208, 8, 166, 104, 0, 0];
 
 #[cfg(feature = "encrypt")]
+/// The cipher in encryption mode.
 pub type AesCipher = (AesGcm<Aes256, U12>, Nonce<U12>);
 
 #[inline]
