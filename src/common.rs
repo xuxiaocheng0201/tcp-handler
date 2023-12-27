@@ -225,5 +225,62 @@ pub(crate) mod test {
         Ok(())
     }
 
-    // TODO: incorrect connection and error handle.
+    macro_rules! test_incorrect {
+        ($protocol: ident) => {
+            #[tokio::test]
+            async fn incorrect() -> anyhow::Result<()> {
+                let (mut client, mut server) = create().await?;
+                crate::variable_len_reader::asynchronous::AsyncVariableWritable::write_string(&mut client, "Something incorrect.").await?;
+                let s = crate::$protocol::server_init(&mut server, &"a", |v| v == "1").await;
+                match crate::$protocol::server_start(&mut server, s).await {
+                    Ok(_) => assert!(false), Err(e) => match e {
+                        crate::common::StarterError::InvalidStream() => assert!(true),
+                        _ => assert!(false),
+                    }
+                }
+                Ok(())
+            }
+
+            #[tokio::test]
+            async fn identifier() -> Result<()> {
+                let (mut client, mut server) = create().await?;
+                let c = crate::$protocol::client_init(&mut client, &"a", &"1").await;
+                let s = crate::$protocol::server_init(&mut server, &"b", |v| v == "1").await;
+                match crate::$protocol::server_start(&mut server, s).await {
+                    Ok(_) => assert!(false), Err(e) => match e {
+                        crate::common::StarterError::ClientInvalidIdentifier(i) => assert_eq!("a", &i),
+                        _ => assert!(false),
+                    }
+                }
+                match crate::$protocol::client_start(&mut client, c).await {
+                    Ok(_) => assert!(false), Err(e) => match e {
+                        crate::common::StarterError::ServerInvalidIdentifier() => assert!(true),
+                        _ => assert!(false),
+                    }
+                }
+                Ok(())
+            }
+
+            #[tokio::test]
+            async fn version() -> Result<()> {
+                let (mut client, mut server) = create().await?;
+                let c = crate::$protocol::client_init(&mut client, &"a", &"1").await;
+                let s = crate::$protocol::server_init(&mut server, &"a", |v| v == "2").await;
+                match crate::$protocol::server_start(&mut server, s).await {
+                    Ok(_) => assert!(false), Err(e) => match e {
+                        crate::common::StarterError::ClientInvalidVersion(v) => assert_eq!("1", &v),
+                        _ => assert!(false),
+                    }
+                }
+                match crate::$protocol::client_start(&mut client, c).await {
+                    Ok(_) => assert!(false), Err(e) => match e {
+                        crate::common::StarterError::ServerInvalidVersion() => assert!(true),
+                        _ => assert!(false),
+                    }
+                }
+                Ok(())
+            }
+        };
+    }
+    pub(crate) use test_incorrect;
 }

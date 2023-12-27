@@ -264,7 +264,7 @@ mod test {
     use bytes::{Buf, BufMut, BytesMut};
     use variable_len_reader::{VariableReadable, VariableWritable};
     use crate::raw::{recv, send};
-    use crate::common::test::create;
+    use crate::common::test::{create, test_incorrect};
 
     #[tokio::test]
     async fn connect() -> Result<()> {
@@ -292,4 +292,6 @@ mod test {
 
         Ok(())
     }
+
+    test_incorrect!(raw);
 }

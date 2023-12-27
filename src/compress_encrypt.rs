@@ -319,7 +319,7 @@ mod test {
     use flate2::Compression;
     use variable_len_reader::{VariableReadable, VariableWritable};
     use crate::compress_encrypt::{recv, send};
-    use crate::common::test::create;
+    use crate::common::test::{create, test_incorrect};
 
     #[tokio::test]
     async fn connect() -> Result<()> {
@@ -353,4 +353,6 @@ mod test {
         let _ = c_cipher;
         Ok(())
     }
+
+    test_incorrect!(compress_encrypt);
 }

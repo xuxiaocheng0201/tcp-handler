@@ -283,7 +283,7 @@ mod test {
     use flate2::Compression;
     use variable_len_reader::{VariableReadable, VariableWritable};
     use crate::compress::{recv, send};
-    use crate::common::test::create;
+    use crate::common::test::{create, test_incorrect};
 
     #[tokio::test]
     async fn connect() -> Result<()> {
@@ -311,4 +311,6 @@ mod test {
 
         Ok(())
     }
+
+    test_incorrect!(compress);
 }

@@ -27,7 +27,7 @@
 
 ```toml
 [dependencies]
-tcp-handler = "~0.3"
+tcp-handler = "~0.4"
 ```
 
 

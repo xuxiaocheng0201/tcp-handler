@@ -318,7 +318,7 @@ mod test {
     use bytes::{Buf, BufMut, BytesMut};
     use variable_len_reader::{VariableReadable, VariableWritable};
     use crate::encrypt::{recv, send};
-    use crate::common::test::create;
+    use crate::common::test::{create, test_incorrect};
 
     #[tokio::test]
     async fn connect() -> Result<()> {
@@ -352,4 +352,6 @@ mod test {
         let _ = c_cipher;
         Ok(())
     }
+
+    test_incorrect!(encrypt);
 }
