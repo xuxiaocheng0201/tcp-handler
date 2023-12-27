@@ -129,6 +129,21 @@ pub enum StarterError {
     AES(#[from] InvalidLength),
 }
 
+impl TryFrom<StarterError> for Error {
+    type Error = StarterError;
+
+    fn try_from(value: StarterError) -> Result<Self, Self::Error> {
+        match value {
+            StarterError::IO(e) => { Ok(e) }
+            StarterError::Packet(p) => match p {
+                PacketError::IO(e) => { Ok(e) }
+                _ => { Err(p.into()) }
+            }
+            _ => Err(value)
+        }
+    }
+}
+
 /// The MAGIC is generated in j-shell environment:
 /// ```java
 /// var r = new Random("tcp-handler".hashCode());
