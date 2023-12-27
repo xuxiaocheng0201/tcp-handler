@@ -58,9 +58,8 @@ use variable_len_reader::{VariableReadable, VariableWritable};
 #[tokio::main]
 async fn main() -> Result<()> {
     // 建立 TCP 连接
-    let addr = "localhost:25564";
-    let server = TcpListener::bind(addr).await?;
-    let mut client = TcpStream::connect(addr).await?;
+    let server = TcpListener::bind("localhost:0").await?;
+    let mut client = TcpStream::connect(server.local_addr()?).await?;
     let (mut server, _) = server.accept().await?;
     
     // 准备 tcp-handler 协议
@@ -72,7 +71,7 @@ async fn main() -> Result<()> {
     // 发送
     let mut writer = BytesMut::new().writer();
     writer.write_string("hello server.")?;
-    send(&mut client, &writer.into_inner()).await?;
+    send(&mut client, &writer.into_inner().into()).await?;
     
     // 接收
     let mut reader = recv(&mut server).await?.reader();
@@ -94,9 +93,8 @@ use variable_len_reader::{VariableReadable, VariableWritable};
 #[tokio::main]
 async fn main() -> Result<()> {
     // 建立 TCP 连接
-    let addr = "localhost:25564";
-    let server = TcpListener::bind(addr).await?;
-    let mut client = TcpStream::connect(addr).await?;
+    let server = TcpListener::bind("localhost:0").await?;
+    let mut client = TcpStream::connect(server.local_addr()?).await?;
     let (mut server, _) = server.accept().await?;
     
     // 准备 tcp-handler 协议，并协商密钥
@@ -108,7 +106,7 @@ async fn main() -> Result<()> {
     // 发送
     let mut writer = BytesMut::new().writer();
     writer.write_string("hello server.")?;
-    let client_cipher = send(&mut client, &writer.into_inner(), client_cipher).await?;
+    let client_cipher = send(&mut client, &writer.into_inner().into(), client_cipher).await?;
     
     // 接收
     let (reader, server_cipher) = recv(&mut server, server_cipher).await?;
@@ -118,7 +116,7 @@ async fn main() -> Result<()> {
     // 发送
     let mut writer = BytesMut::new().writer();
     writer.write_string("hello client.")?;
-    let _server_cipher = send(&mut client, &writer.into_inner(), server_cipher).await?;
+    let _server_cipher = send(&mut client, &writer.into_inner().into(), server_cipher).await?;
     
     // 接收
     let (reader, _client_cipher) = recv(&mut server, client_cipher).await?;
