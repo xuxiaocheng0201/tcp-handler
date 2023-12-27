@@ -231,7 +231,7 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 /// You may use some crate to read and write data,
 /// such as [`serde`](https://crates.io/crates/serde),
 /// [`postcard`](https://crates.io/crates/postcard) and
-/// [`variable-len-reader`](https://crates.io/crates/variable-len-reader)
+/// [`variable-len-reader`](https://crates.io/crates/variable-len-reader).
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `WriteHalf`.
@@ -275,7 +275,7 @@ pub async fn send<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Byt
 /// You may use some crate to read and write data,
 /// such as [`serde`](https://crates.io/crates/serde),
 /// [`postcard`](https://crates.io/crates/postcard) and
-/// [`variable-len-reader`](https://crates.io/crates/variable-len-reader)
+/// [`variable-len-reader`](https://crates.io/crates/variable-len-reader).
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `ReadHalf`.

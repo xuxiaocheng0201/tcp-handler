@@ -62,6 +62,31 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use variable_len_reader::{VariableReadable, VariableWritable};
 use crate::common::{AesCipher, PacketError, read_head, read_packet, StarterError, write_head, write_packet};
 
+/// Init the client side in tcp-handler compress_encrypt protocol.
+///
+/// Must be used in conjunction with `tcp_handler::compress_encrypt::client_start`.
+///
+/// # Arguments
+///  * `stream` - The tcp stream or `WriteHalf`.
+///  * `identifier` - The identifier of your application.
+///  * `version` - Current version of your application.
+///
+/// # Example
+/// ```no_run
+/// use anyhow::Result;
+/// use tcp_handler::compress_encrypt::{client_init, client_start};
+/// use tokio::net::TcpStream;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<()> {
+///     let mut client = TcpStream::connect("localhost:25564").await?;
+///     let c_init = client_init(&mut client, &"test", &"0").await;
+///     let cipher = client_start(&mut client, c_init).await?;
+///     // Now the client is ready to use.
+///     # let _ = cipher;
+///     Ok(())
+/// }
+/// ```
 pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identifier: &str, version: &str) -> Result<RsaPrivateKey, StarterError> {
     let key = RsaPrivateKey::new(&mut RsaRng, 2048)?;
     let mut writer = write_head(stream, identifier, version, true, true).await?;
@@ -71,6 +96,56 @@ pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identi
     Ok(key)
 }
 
+/// Init the server side in tcp-handler compress_encrypt protocol.
+///
+/// Must be used in conjunction with `tcp_handler::compress_encrypt::server_start`.
+///
+/// # Arguments
+///  * `stream` - The tcp stream or `ReadHalf`.
+///  * `identifier` - The identifier of your application.
+///  * `version` - A prediction to determine whether the client version is allowed.
+///
+/// # Example
+/// ```no_run
+/// use anyhow::Result;
+/// use tcp_handler::compress_encrypt::{server_init, server_start};
+/// use tokio::net::TcpListener;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<()> {
+///     let server = TcpListener::bind("localhost:25564").await?;
+///     let (mut server, _) = server.accept().await?;
+///     let s_init = server_init(&mut server, &"test", |v| v == "0").await;
+///     let cipher = server_start(&mut server, s_init).await?;
+///     // Now the server is ready to use.
+///     # let _ = cipher;
+///     Ok(())
+/// }
+/// ```
+///
+/// You can get the client version from this function:
+/// ```no_run
+/// use anyhow::Result;
+/// use tcp_handler::compress_encrypt::{server_init, server_start};
+/// use tokio::net::TcpListener;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<()> {
+///     let server = TcpListener::bind("localhost:25564").await?;
+///     let (mut server, _) = server.accept().await?;
+///     let mut version = None;
+///     let s_init = server_init(&mut server, &"test", |v| {
+///         version = Some(v.to_string());
+///         v == "0"
+///     }).await;
+///     let cipher = server_start(&mut server, s_init).await?;
+///     let version = version.unwrap();
+///     // Now the version is got.
+///     # let _ = cipher;
+///     # let _ = version;
+///     Ok(())
+/// }
+/// ```
 pub async fn server_init<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) -> bool>(stream: &mut R, identifier: &str, version: P) -> Result<RsaPublicKey, StarterError> {
     let mut reader = read_head(stream, identifier, version, true, true).await?;
     let n = rsa::BigUint::from_bytes_le(&reader.read_u8_vec()?);
@@ -79,16 +154,100 @@ pub async fn server_init<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) -> bool
     Ok(key)
 }
 
+/// Make sure the server side is ready to use in tcp-handler compress_encrypt protocol.
+///
+/// Must be used in conjunction with `tcp_handler::compress_encrypt::server_init`.
+///
+/// # Arguments
+///  * `stream` - The tcp stream or `WriteHalf`.
+///  * `last` - The return value of `tcp_handler::compress_encrypt::server_init`.
+///
+/// # Example
+/// ```no_run
+/// use anyhow::Result;
+/// use tcp_handler::compress_encrypt::{server_init, server_start};
+/// use tokio::net::TcpListener;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<()> {
+///     let server = TcpListener::bind("localhost:25564").await?;
+///     let (mut server, _) = server.accept().await?;
+///     let s_init = server_init(&mut server, &"test", |v| v == "0").await;
+///     let cipher = server_start(&mut server, s_init).await?;
+///     // Now the server is ready to use.
+///     # let _ = cipher;
+///     Ok(())
+/// }
+/// ```
 #[inline]
 pub async fn server_start<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, last: Result<RsaPublicKey, StarterError>) -> Result<AesCipher, StarterError> {
     crate::encrypt::server_start(stream, last).await
 }
 
+/// Make sure the client side is ready to use in tcp-handler compress_encrypt protocol.
+///
+/// Must be used in conjunction with `tcp_handler::compress_encrypt::client_init`.
+///
+/// # Arguments
+///  * `stream` - The tcp stream or `ReadHalf`.
+///  * `last` - The return value of `tcp_handler::compress_encrypt::client_init`.
+///
+/// # Example
+/// ```no_run
+/// use anyhow::Result;
+/// use tcp_handler::compress_encrypt::{client_init, client_start};
+/// use tokio::net::TcpStream;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<()> {
+///     let mut client = TcpStream::connect("localhost:25564").await?;
+///     let c_init = client_init(&mut client, &"test", &"0").await;
+///     let cipher = client_start(&mut client, c_init).await?;
+///     // Now the client is ready to use.
+///     # let _ = cipher;
+///     Ok(())
+/// }
+/// ```
 #[inline]
 pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: Result<RsaPrivateKey, StarterError>) -> Result<AesCipher, StarterError> {
     crate::encrypt::client_start(stream, last).await
 }
 
+/// Send message in compress_encrypt tcp-handler protocol.
+///
+/// You may use some crate to read and write data,
+/// such as [`serde`](https://crates.io/crates/serde),
+/// [`postcard`](https://crates.io/crates/postcard) and
+/// [`variable-len-reader`](https://crates.io/crates/variable-len-reader).
+///
+/// # Arguments
+///  * `stream` - The tcp stream or `WriteHalf`.
+///  * `message` - The message to send.
+///  * `level` - The level of compression.
+///
+/// # Example
+/// ```no_run
+/// use anyhow::Result;
+/// use bytes::{BufMut, BytesMut};
+/// use flate2::Compression;
+/// use tcp_handler::compress_encrypt::{client_init, client_start, send};
+/// use tokio::net::TcpStream;
+/// use variable_len_reader::VariableWritable;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<()> {
+///     let mut client = TcpStream::connect("localhost:25564").await?;
+///     let c_init = client_init(&mut client, &"test", &"0").await;
+///     let mut cipher = client_start(&mut client, c_init).await?;
+///
+///     let mut writer = BytesMut::new().writer();
+///     writer.write_string("hello server.")?;
+///     cipher = send(&mut client, &writer.into_inner().into(), cipher, Compression::default()).await?;
+///
+///     # let _ = cipher;
+///     Ok(())
+/// }
+/// ```
 pub async fn send<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Bytes, cipher: AesCipher, level: Compression) -> Result<AesCipher, PacketError> {
     let (cipher, nonce) = cipher;
     let new_nonce = Aes256Gcm::generate_nonce(&mut AesRng);
@@ -106,6 +265,37 @@ pub async fn send<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Byt
     Ok((cipher, new_nonce))
 }
 
+/// Recv message in compress_encrypt tcp-handler protocol.
+///
+/// You may use some crate to read and write data,
+/// such as [`serde`](https://crates.io/crates/serde),
+/// [`postcard`](https://crates.io/crates/postcard) and
+/// [`variable-len-reader`](https://crates.io/crates/variable-len-reader).
+///
+/// # Arguments
+///  * `stream` - The tcp stream or `ReadHalf`.
+///
+/// # Example
+/// ```no_run
+/// use anyhow::Result;
+/// use bytes::Buf;
+/// use tcp_handler::compress_encrypt::{recv, server_init, server_start};
+/// use tokio::net::TcpListener;
+/// use variable_len_reader::VariableReadable;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<()> {
+///     let server = TcpListener::bind("localhost:25564").await?;
+///     let (mut server, _) = server.accept().await?;
+///     let s_init = server_init(&mut server, &"test", |v| v == "0").await;
+///     let mut cipher = server_start(&mut server, s_init).await?;
+///
+///     let (reader, c) = recv(&mut server, cipher).await?;
+///     let mut reader = reader.reader(); cipher = c;
+///     let _message = reader.read_string()?;
+///     Ok(())
+/// }
+/// ```
 pub async fn recv<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: AesCipher) -> Result<(BytesMut, AesCipher), PacketError> {
     let (cipher, nonce) = cipher;
     let mut bytes = read_packet(stream).await?;
