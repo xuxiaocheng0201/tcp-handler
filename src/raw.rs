@@ -40,6 +40,16 @@
 //!     Ok(())
 //! }
 //! ```
+//!
+//! This protocol is like this:
+//! ```text
+//!         ┌────┬────────┬────────────┐ (It may not be in contiguous memory.)
+//! in  --> │ ** │ ****** │ ********** │
+//!         └────┴────────┴────────────┘
+//!           │
+//!           │─ Directly send
+//! out <--  ─┘
+//! ```
 
 use bytes::{Bytes, BytesMut};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

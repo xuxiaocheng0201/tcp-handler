@@ -43,6 +43,19 @@
 //!     Ok(())
 //! }
 //! ```
+//!
+//! This protocol is like this:
+//! ```text
+//!         ┌────┬────────┬────────────┐ (It may not be in contiguous memory.)
+//! in  --> │ ** │ ****** │ ********** │
+//!         └────┴────────┴────────────┘
+//!           │
+//!           │─ DeflateEncoder
+//!           v
+//!         ┌────────────────────┐ (Compressed bytes. In contiguous memory.)
+//! out <-- │ ****************** │
+//!         └────────────────────┘
+//! ```
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use flate2::Compression;

@@ -7,11 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2023-12-27
+
+### Added
+
+* 支持便捷地从`StarterError`中提取`std::io::Error`。
+
 ### Changed
 
 * 添加`client_init`速度极慢的提示和解决办法。
 * 重新组织代码结构。
-* 添加文档。
+* 完善文档，添加协议解析。
 
 ## [0.3.2] - 2023-12-27
 

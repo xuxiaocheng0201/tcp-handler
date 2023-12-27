@@ -42,6 +42,14 @@ fn check_bytes_len(len: usize) -> Result<(), PacketError> {
     if len > config { Err(PacketError::TooLarge(len, config)) } else { Ok(()) }
 }
 
+//! ```text
+///   ┌─ Packet length (in varint)
+///   │    ┌─ Packet message
+///   v    v
+//! ┌────┬────────┐
+//! │ ** │ ****** │
+//! └────┴────────┘
+//! ```
 pub(crate) async fn write_packet<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, bytes: &Bytes) -> Result<(), PacketError> {
     let mut bytes = bytes.clone();
     check_bytes_len(bytes.remaining())?;
@@ -158,6 +166,16 @@ static MAGIC_BYTES: [u8; 6] = [208, 8, 166, 104, 0, 0];
 /// You **must** update this value after each call to the send/recv function.
 pub type AesCipher = (AesGcm<Aes256, U12>, Nonce<U12>);
 
+/// ```text
+///    ┌─ Magic bytes
+///    │    ┌─ Protocol number (compression and encryption)
+///    │    │     ┌─ Application identifier
+///    │    │     │     ┌─ Application version
+///    v    v     v     v
+/// ┌─────┬────┬─────┬─────┐
+/// │ *** │ 01 │ *** │ *** │
+/// └─────┴────┴─────┴─────┘
+/// ```
 #[inline]
 pub(crate) async fn write_head<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identifier: &str, version: &str, compression: bool, encryption: bool) -> Result<Writer<BytesMut>, StarterError> {
     stream.write_more(&MAGIC_BYTES).await?;
@@ -183,6 +201,13 @@ pub(crate) async fn read_head<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) ->
     Ok(reader)
 }
 
+/// ```text
+///    ┌─ State number (protocol, identifier and version)
+///    v
+/// ┌─────┐
+/// │ 000 │
+/// └─────┘
+/// ```
 #[inline]
 pub(crate) async fn write_last<W: AsyncWriteExt + Unpin + Send, E>(stream: &mut W, last: Result<E, StarterError>) -> Result<E, StarterError> {
     match last {

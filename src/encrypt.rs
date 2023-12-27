@@ -46,6 +46,25 @@
 //!     Ok(())
 //! }
 //! ```
+//!
+//! This protocol is like this:
+//! ```text
+//!         ┌────┬────────┬────────────┐ (It may not be in contiguous memory.)
+//! in  --> │ ** │ ****** │ ********** │
+//!         └────┴────────┴────────────┘
+//!           │
+//!           │─ Copy once.
+//!           v
+//!         ┌────────────────────┐ (In contiguous memory.)
+//!         │ ****************** │
+//!         └────────────────────┘
+//!           │
+//!           │─ Encrypt in-place
+//!           v
+//!         ┌────────────────────┐ (Encrypted bytes.)
+//! out <-- │ ****************** │
+//!         └────────────────────┘
+//! ```
 
 use aead::AeadInPlace;
 use aes_gcm::{AeadCore, Aes256Gcm, KeyInit, Nonce};

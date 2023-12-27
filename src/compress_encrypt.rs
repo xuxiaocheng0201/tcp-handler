@@ -48,6 +48,25 @@
 //!     Ok(())
 //! }
 //! ```
+//!
+//! This protocol is like this:
+//! ```text
+//!         ┌────┬────────┬────────────┐ (It may not be in contiguous memory.)
+//! in  --> │ ** │ ****** │ ********** │
+//!         └────┴────────┴────────────┘
+//!           │
+//!           │─ DeflateEncoder
+//!           v
+//!         ┌────────────────────┐ (Compressed bytes. In contiguous memory.)
+//!         │ ****************** │
+//!         └────────────────────┘
+//!           │
+//!           │─ Encrypt in-place
+//!           v
+//!         ┌────────────────────┐ (Compressed and encrypted bytes.)
+//! out <-- │ ****************** │
+//!         └────────────────────┘
+//! ```
 
 use aead::{AeadCore, AeadInPlace};
 use aes_gcm::aead::rand_core::OsRng as AesRng;

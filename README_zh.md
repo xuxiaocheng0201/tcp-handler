@@ -10,7 +10,7 @@
 
 # 描述
 
-更便捷地使用`tokio`的 Tcp流 传输`bytes`数据块。
+更便捷地使用`tokio::net::TcpStream`传输`bytes::Bytes`数据块。
 
 
 # 特性
@@ -19,6 +19,7 @@
 * 支持 `tokio::net::TcpStream` 的 `ReadHalf` 和 `WriteHalf`。
 * 支持加密（[rsa](https://crates.io/crates/rsa) 和 [aes](https://crates.io/crates/aes-gcm)）。
 * 支持压缩（[flate2](https://crates.io/crates/flate2)）。
+* 完整的 [API文档](https://docs.rs/tcp-handler/) 和数据模型。
 
 
 # 用法

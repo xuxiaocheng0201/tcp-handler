@@ -10,7 +10,7 @@
 
 # Description
 
-More conveniently use TcpStream in `tokio` to transfer `bytes` data chunks.
+More conveniently use `tokio::net::TcpStream` to transfer `bytes::Bytes` data chunks.
 
 
 # Features
@@ -19,6 +19,7 @@ More conveniently use TcpStream in `tokio` to transfer `bytes` data chunks.
 * Support `ReadHalf` and `WriteHalf` of `tokio::net::TcpStream`.
 * Support encryption ([rsa](https://crates.io/crates/rsa) and [aes](https://crates.io/crates/aes-gcm)).
 * Support compression ([flate2](https://crates.io/crates/flate2)).
+* Complete API [document](https://docs.rs/tcp-handler/) and data model.
 
 
 # Usage
