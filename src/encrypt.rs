@@ -23,8 +23,8 @@
 //!
 //!     let mut writer = BytesMut::new().writer();
 //!     writer.write_string("hello server.")?;
-//!     let bytes = writer.into_inner().into();
-//!     c_cipher = send(&mut client, &bytes, c_cipher).await?;
+//!     let mut bytes = writer.into_inner();
+//!     c_cipher = send(&mut client, &mut bytes, c_cipher).await?;
 //!
 //!     let (reader, s) = recv(&mut server, s_cipher).await?;
 //!     let mut reader = reader.reader(); s_cipher = s;
@@ -33,8 +33,8 @@
 //!
 //!     let mut writer = BytesMut::new().writer();
 //!     writer.write_string("hello client.")?;
-//!     let bytes = writer.into_inner().into();
-//!     s_cipher = send(&mut server, &bytes, s_cipher).await?;
+//!     let mut bytes = writer.into_inner();
+//!     s_cipher = send(&mut server, &mut bytes, s_cipher).await?;
 //!
 //!     let (reader, c) = recv(&mut client, c_cipher).await?;
 //!     let mut reader = reader.reader(); c_cipher = c;
@@ -52,12 +52,12 @@
 //!         ┌────┬────────┬────────────┐ (It may not be in contiguous memory.)
 //! in  --> │ ** │ ****** │ ********** │
 //!         └────┴────────┴────────────┘
-//!           │
-//!           │─ Copy once.
-//!           v
-//!         ┌────────────────────┐ (In contiguous memory.)
-//!         │ ****************** │
-//!         └────────────────────┘
+//!           Nonce│
+//!           │    │─ Copy once.
+//!           v    v
+//!         ┌────┬────────────────────┐ (In contiguous memory.)
+//!         │ ** │ ****************** │
+//!         └────┴────────────────────┘
 //!           │
 //!           │─ Encrypt in-place
 //!           v
@@ -67,9 +67,11 @@
 //! ```
 
 use aead::AeadInPlace;
+use aead::consts::U16;
+use aead::generic_array::typenum::Unsigned;
 use aes_gcm::{AeadCore, Aes256Gcm, KeyInit, Nonce};
 use aes_gcm::aead::rand_core::OsRng as AesRng;
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use rsa::{Oaep, RsaPrivateKey, RsaPublicKey};
 use rsa::rand_core::OsRng as RsaRng;
 use rsa::traits::PublicKeyParts;
@@ -108,7 +110,7 @@ pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identi
     let mut writer = write_head(stream, identifier, version, false, true).await?;
     writer.write_u8_vec(&key.n().to_bytes_le())?;
     writer.write_u8_vec(&key.e().to_bytes_le())?;
-    write_packet(stream, &writer.into_inner().into()).await?;
+    write_packet(stream, &mut writer.into_inner()).await?;
     Ok(key)
 }
 
@@ -205,7 +207,7 @@ pub async fn server_start<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, last:
     let mut writer = BytesMut::new().writer();
     writer.write_u8_vec(&encrypted_aes)?;
     writer.write_more(&nonce)?;
-    write_packet(stream, &writer.into_inner().into()).await?;
+    write_packet(stream, &mut writer.into_inner()).await?;
     Ok((cipher, nonce))
 }
 
@@ -272,20 +274,25 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 ///
 ///     let mut writer = BytesMut::new().writer();
 ///     writer.write_string("hello server.")?;
-///     cipher = send(&mut client, &writer.into_inner().into(), cipher).await?;
+///     cipher = send(&mut client, &mut writer.into_inner(), cipher).await?;
 ///
 ///     # let _ = cipher;
 ///     Ok(())
 /// }
 /// ```
-pub async fn send<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Bytes, cipher: AesCipher) -> Result<AesCipher, PacketError> {
+pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, message: &mut B, cipher: AesCipher) -> Result<AesCipher, PacketError> {
     let (cipher, nonce) = cipher;
     let new_nonce = Aes256Gcm::generate_nonce(&mut AesRng);
     debug_assert_eq!(12, nonce.len());
-    let mut bytes = BytesMut::from(new_nonce.as_slice());
-    bytes.extend_from_slice(&message);
+    let mut bytes = BytesMut::with_capacity(12 + message.remaining() + U16::to_usize());
+    bytes.extend_from_slice(new_nonce.as_slice());
+    while message.has_remaining() {
+        let chunk = message.chunk();
+        bytes.extend_from_slice(chunk);
+        message.advance(chunk.len());
+    }
     cipher.encrypt_in_place(&nonce, &[], &mut bytes)?;
-    write_packet(stream, &bytes.into()).await?;
+    write_packet(stream, &mut bytes).await?;
     Ok((cipher, new_nonce))
 }
 
@@ -349,8 +356,8 @@ mod test {
 
         let mut writer = BytesMut::new().writer();
         writer.write_string("hello server.")?;
-        let bytes = writer.into_inner().into();
-        c_cipher = send(&mut client, &bytes, c_cipher).await?;
+        let mut bytes = writer.into_inner();
+        c_cipher = send(&mut client, &mut bytes, c_cipher).await?;
 
         let (reader, s) = recv(&mut server, s_cipher).await?;
         let mut reader = reader.reader(); s_cipher = s;
@@ -359,8 +366,8 @@ mod test {
 
         let mut writer = BytesMut::new().writer();
         writer.write_string("hello client.")?;
-        let bytes = writer.into_inner().into();
-        s_cipher = send(&mut server, &bytes, s_cipher).await?;
+        let mut bytes = writer.into_inner();
+        s_cipher = send(&mut server, &mut bytes, s_cipher).await?;
 
         let (reader, c) = recv(&mut client, c_cipher).await?;
         let mut reader = reader.reader(); c_cipher = c;

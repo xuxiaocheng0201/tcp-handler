@@ -17,6 +17,7 @@
 
 * 基于 [tokio](https://crates.io/crates/tokio) 和 [bytes](https://crates.io/crates/bytes) 库。
 * 支持 `tokio::net::TcpStream` 的 `ReadHalf` 和 `WriteHalf`。
+* 支持 `bytes::Buf`，故可以发送使用 `chain` 连接的非连续内存中的多个数据块。
 * 支持加密（[rsa](https://crates.io/crates/rsa) 和 [aes](https://crates.io/crates/aes-gcm)）。
 * 支持压缩（[flate2](https://crates.io/crates/flate2)）。
 * 完整的 [API文档](https://docs.rs/tcp-handler/) 和数据模型。
@@ -72,7 +73,7 @@ async fn main() -> Result<()> {
     // 发送
     let mut writer = BytesMut::new().writer();
     writer.write_string("hello server.")?;
-    send(&mut client, &writer.into_inner().into()).await?;
+    send(&mut client, &mut writer.into_inner()).await?;
     
     // 接收
     let mut reader = recv(&mut server).await?.reader();
@@ -108,7 +109,7 @@ async fn main() -> Result<()> {
     // 发送
     let mut writer = BytesMut::new().writer();
     writer.write_string("hello server.")?;
-    let client_cipher = send(&mut client, &writer.into_inner().into(), client_cipher).await?;
+    let client_cipher = send(&mut client, &mut writer.into_inner(), client_cipher).await?;
     
     // 接收
     let (reader, server_cipher) = recv(&mut server, server_cipher).await?;
@@ -118,7 +119,7 @@ async fn main() -> Result<()> {
     // 发送
     let mut writer = BytesMut::new().writer();
     writer.write_string("hello client.")?;
-    let _server_cipher = send(&mut client, &writer.into_inner().into(), server_cipher).await?;
+    let _server_cipher = send(&mut client, &mut writer.into_inner(), server_cipher).await?;
     
     // 接收
     let (reader, _client_cipher) = recv(&mut server, client_cipher).await?;
@@ -130,3 +131,31 @@ async fn main() -> Result<()> {
 ```
 
 压缩流的传输方法与上述两者类似，请使用`compress`和`compress_encrypt`mod中的方法。
+
+发送不连续的内存块：
+
+```rust
+use anyhow::Result;
+use bytes::{Buf, Bytes};
+use tcp_handler::raw::{client_init, client_start, recv, send, server_init, server_start};
+use tokio::net::{TcpListener, TcpStream};
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // 建立连接
+    let server = TcpListener::bind("localhost:0").await?;
+    let mut client = TcpStream::connect(server.local_addr()?).await?;
+    let (mut server, _) = server.accept().await?;
+    let client_init = client_init(&mut client, &"chain", &"0").await;
+    let server_init = server_init(&mut server, &"chain", |v| v == "0").await;
+    server_start(&mut server, server_init).await?;
+    client_start(&mut client, client_init).await?;
+
+    // 使用chain
+    let mut messages = Bytes::from("a").chain(Bytes::from("b")).chain(Bytes::from("c"));
+    send(&mut client, &mut messages).await?;
+    let message = recv(&mut server).await?;
+    assert_eq!(b"abc", message.as_ref());
+    Ok(())
+}
+```

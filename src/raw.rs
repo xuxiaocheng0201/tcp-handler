@@ -23,7 +23,7 @@
 //!
 //!     let mut writer = BytesMut::new().writer();
 //!     writer.write_string("hello server.")?;
-//!     send(&mut client, &writer.into_inner().into()).await?;
+//!     send(&mut client, &mut writer.into_inner()).await?;
 //!
 //!     let mut reader = recv(&mut server).await?.reader();
 //!     let message = reader.read_string()?;
@@ -31,7 +31,7 @@
 //!
 //!     let mut writer = BytesMut::new().writer();
 //!     writer.write_string("hello client.")?;
-//!     send(&mut server, &writer.into_inner().into()).await?;
+//!     send(&mut server, &mut writer.into_inner()).await?;
 //!
 //!     let mut reader = recv(&mut client).await?.reader();
 //!     let message = reader.read_string()?;
@@ -51,7 +51,7 @@
 //! out <--  ─┘
 //! ```
 
-use bytes::{Bytes, BytesMut};
+use bytes::{Buf, BytesMut};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::common::{PacketError, read_head, read_last, read_packet, StarterError, write_head, write_last, write_packet};
 
@@ -81,7 +81,7 @@ use crate::common::{PacketError, read_head, read_last, read_packet, StarterError
 /// ```
 pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identifier: &str, version: &str) -> Result<(), StarterError> {
     let writer = write_head(stream, identifier, version, false, false).await?;
-    write_packet(stream, &writer.into_inner().into()).await?;
+    write_packet(stream, &mut writer.into_inner()).await?;
     Ok(())
 }
 
@@ -223,12 +223,12 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 ///
 ///     let mut writer = BytesMut::new().writer();
 ///     writer.write_string("hello server.")?;
-///     send(&mut client, &writer.into_inner().into()).await?;
+///     send(&mut client, &mut writer.into_inner()).await?;
 ///     Ok(())
 /// }
 /// ```
 #[inline]
-pub async fn send<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Bytes) -> Result<(), PacketError> {
+pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, message: &mut B) -> Result<(), PacketError> {
     write_packet(stream, message).await
 }
 
@@ -286,7 +286,7 @@ mod test {
 
         let mut writer = BytesMut::new().writer();
         writer.write_string("hello server.")?;
-        send(&mut client, &writer.into_inner().into()).await?;
+        send(&mut client, &mut writer.into_inner()).await?;
 
         let mut reader = recv(&mut server).await?.reader();
         let message = reader.read_string()?;
@@ -294,7 +294,7 @@ mod test {
 
         let mut writer = BytesMut::new().writer();
         writer.write_string("hello client.")?;
-        send(&mut server, &writer.into_inner().into()).await?;
+        send(&mut server, &mut writer.into_inner()).await?;
 
         let mut reader = recv(&mut client).await?.reader();
         let message = reader.read_string()?;

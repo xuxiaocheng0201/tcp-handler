@@ -24,8 +24,8 @@
 //!
 //!     let mut writer = BytesMut::new().writer();
 //!     writer.write_string("hello server.")?;
-//!     let bytes = writer.into_inner().into();
-//!     send(&mut client, &bytes, Compression::default()).await?;
+//!     let mut bytes = writer.into_inner();
+//!     send(&mut client, &mut bytes, Compression::default()).await?;
 //!
 //!     let mut reader = recv(&mut server).await?.reader();
 //!     let message = reader.read_string()?;
@@ -33,8 +33,8 @@
 //!
 //!     let mut writer = BytesMut::new().writer();
 //!     writer.write_string("hello client.")?;
-//!     let bytes = writer.into_inner().into();
-//!     send(&mut server, &bytes, Compression::default()).await?;
+//!     let mut bytes = writer.into_inner();
+//!     send(&mut server, &mut bytes, Compression::default()).await?;
 //!
 //!     let mut reader = recv(&mut client).await?.reader();
 //!     let message = reader.read_string()?;
@@ -57,7 +57,7 @@
 //!         └────────────────────┘
 //! ```
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use flate2::Compression;
 use flate2::write::{DeflateDecoder, DeflateEncoder};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -90,7 +90,7 @@ use crate::common::{PacketError, read_head, read_packet, StarterError, write_hea
 /// ```
 pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identifier: &str, version: &str) -> Result<(), StarterError> {
     let writer = write_head(stream, identifier, version, true, false).await?;
-    write_packet(stream, &writer.into_inner().into()).await?;
+    write_packet(stream, &mut writer.into_inner()).await?;
     Ok(())
 }
 
@@ -233,19 +233,18 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 ///
 ///     let mut writer = BytesMut::new().writer();
 ///     writer.write_string("hello server.")?;
-///     send(&mut client, &writer.into_inner().into(), Compression::default()).await?;
+///     send(&mut client, &mut writer.into_inner(), Compression::default()).await?;
 ///     Ok(())
 /// }
 /// ```
-pub async fn send<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, message: &Bytes, level: Compression) -> Result<(), PacketError> {
-    let mut message = message.clone();
+pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, message: &mut B, level: Compression) -> Result<(), PacketError> {
     let mut encoder = DeflateEncoder::new(BytesMut::new().writer(), level);
     while message.has_remaining() {
         let len = encoder.write_more(message.chunk())?;
         message.advance(len);
     }
-    let bytes = encoder.finish()?.into_inner();
-    write_packet(stream, &bytes.into()).await
+    let mut bytes = encoder.finish()?.into_inner();
+    write_packet(stream, &mut bytes).await
 }
 
 /// Recv message in compress tcp-handler protocol.
@@ -308,7 +307,7 @@ mod test {
 
         let mut writer = BytesMut::new().writer();
         writer.write_string("hello server.")?;
-        send(&mut client, &writer.into_inner().into(), Compression::best()).await?;
+        send(&mut client, &mut writer.into_inner(), Compression::best()).await?;
 
         let mut reader = recv(&mut server).await?.reader();
         let message = reader.read_string()?;
@@ -316,7 +315,7 @@ mod test {
 
         let mut writer = BytesMut::new().writer();
         writer.write_string("hello client.")?;
-        send(&mut server, &writer.into_inner().into(), Compression::fast()).await?;
+        send(&mut server, &mut writer.into_inner(), Compression::fast()).await?;
 
         let mut reader = recv(&mut client).await?.reader();
         let message = reader.read_string()?;

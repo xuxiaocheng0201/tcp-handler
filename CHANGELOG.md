@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2023-12-28
+
+### Added
+
+* 支持发送不连续的buf（chain）。
+
+### Fixed
+
+* 完善Nonce部分的协议解析。
+
 ## [0.4.0] - 2023-12-27
 
 ### Added

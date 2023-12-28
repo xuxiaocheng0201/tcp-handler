@@ -7,7 +7,7 @@ use aes_gcm::aes::Aes256;
 use aes_gcm::aes::cipher::InvalidLength;
 use aes_gcm::{AesGcm, Nonce};
 use bytes::buf::{Reader, Writer};
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use variable_len_reader::asynchronous::{AsyncVariableReadable, AsyncVariableWritable};
@@ -50,8 +50,7 @@ fn check_bytes_len(len: usize) -> Result<(), PacketError> {
 /// │ ** │ ****** │
 /// └────┴────────┘
 /// ```
-pub(crate) async fn write_packet<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, bytes: &Bytes) -> Result<(), PacketError> {
-    let mut bytes = bytes.clone();
+pub(crate) async fn write_packet<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, bytes: &mut B) -> Result<(), PacketError> {
     check_bytes_len(bytes.remaining())?;
     stream.write_u128_varint(bytes.remaining() as u128).await?;
     while bytes.has_remaining() {
@@ -243,6 +242,8 @@ pub(crate) async fn read_last<R: AsyncReadExt + Unpin + Send, E>(stream: &mut R,
 #[cfg(test)]
 pub(crate) mod test {
     use anyhow::Result;
+    use bytes::{Buf, Bytes};
+    use flate2::Compression;
     use tokio::net::{TcpListener, TcpStream};
 
     pub(crate) async fn create() -> Result<(TcpStream, TcpStream)> {
@@ -262,6 +263,21 @@ pub(crate) mod test {
         crate::raw::server_start(&mut server, s).await?;
         crate::raw::client_start(&mut client, c).await?;
         assert_eq!(Some("1"), version.as_deref());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn chain() -> Result<()> {
+        let (mut client, mut server) = create().await?;
+        let c = crate::compress_encrypt::client_init(&mut client, &"a", &"1").await;
+        let s = crate::compress_encrypt::server_init(&mut server, &"a", |v| v == "1").await;
+        let s = crate::compress_encrypt::server_start(&mut server, s).await?;
+        let c = crate::compress_encrypt::client_start(&mut client, c).await?;
+
+        let mut message = Bytes::from("a").chain(Bytes::from("b")).chain(Bytes::from("c"));
+        crate::compress_encrypt::send(&mut client, &mut message, c, Compression::default()).await?;
+        let message = crate::compress_encrypt::recv(&mut server, s).await?.0;
+        assert_eq!(b"abc", message.as_ref());
         Ok(())
     }
 
