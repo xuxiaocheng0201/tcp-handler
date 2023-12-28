@@ -29,7 +29,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tcp-handler = "~0.4"
+tcp-handler = "~0.5"
 ```
 
 
