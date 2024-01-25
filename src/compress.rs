@@ -9,7 +9,7 @@
 //! use flate2::Compression;
 //! use tcp_handler::compress::*;
 //! use tokio::net::{TcpListener, TcpStream};
-//! use variable_len_reader::{VariableReadable, VariableWritable};
+//! use variable_len_reader::{VariableReader, VariableWriter};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
@@ -61,6 +61,7 @@ use bytes::{Buf, BufMut, BytesMut};
 use flate2::Compression;
 use flate2::write::{DeflateDecoder, DeflateEncoder};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use variable_len_reader::util::bufs::WriteBuf;
 use variable_len_reader::VariableWritable;
 use crate::common::{PacketError, read_head, read_packet, StarterError, write_head, write_packet};
 
@@ -223,7 +224,7 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 /// use flate2::Compression;
 /// use tcp_handler::compress::{client_init, client_start, send};
 /// use tokio::net::TcpStream;
-/// use variable_len_reader::VariableWritable;
+/// use variable_len_reader::VariableWriter;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<()> {
@@ -240,7 +241,7 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, message: &mut B, level: Compression) -> Result<(), PacketError> {
     let mut encoder = DeflateEncoder::new(BytesMut::new().writer(), level);
     while message.has_remaining() {
-        let len = encoder.write_more(message.chunk())?;
+        let len = encoder.write_more(&mut WriteBuf::new(message.chunk()))?;
         message.advance(len);
     }
     let mut bytes = encoder.finish()?.into_inner();
@@ -263,7 +264,7 @@ pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, messa
 /// use bytes::Buf;
 /// use tcp_handler::compress::{recv, server_init, server_start};
 /// use tokio::net::TcpListener;
-/// use variable_len_reader::VariableReadable;
+/// use variable_len_reader::VariableReader;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<()> {
@@ -281,7 +282,7 @@ pub async fn recv<R: AsyncReadExt + Unpin + Send>(stream: &mut R) -> Result<Byte
     let mut bytes = read_packet(stream).await?;
     let mut decoder = DeflateDecoder::new(BytesMut::new().writer());
     while bytes.has_remaining() {
-        let len = decoder.write_more(bytes.chunk())?;
+        let len = decoder.write_more(&mut WriteBuf::new(bytes.chunk()))?;
         bytes.advance(len);
     }
     Ok(decoder.finish()?.into_inner())
@@ -293,7 +294,7 @@ mod test {
     use anyhow::Result;
     use bytes::{Buf, BufMut, BytesMut};
     use flate2::Compression;
-    use variable_len_reader::{VariableReadable, VariableWritable};
+    use variable_len_reader::{VariableReader, VariableWriter};
     use crate::compress::{recv, send};
     use crate::common::test::{create, test_incorrect};
 

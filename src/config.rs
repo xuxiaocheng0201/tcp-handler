@@ -92,7 +92,7 @@ pub fn get_config() -> Config {
 }
 
 /// A cheaper shortcut of
-/// ```ignore
+/// ```rust,ignore
 /// get_config().max_packet_size
 /// ```
 #[inline]

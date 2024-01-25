@@ -10,8 +10,7 @@ use bytes::buf::{Reader, Writer};
 use bytes::{Buf, BufMut, BytesMut};
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use variable_len_reader::asynchronous::{AsyncVariableReadable, AsyncVariableWritable};
-use variable_len_reader::{VariableReadable, VariableWritable};
+use variable_len_reader::{AsyncVariableReader, AsyncVariableWriter, VariableReader, VariableWriter};
 use crate::config::get_max_packet_size;
 
 /// Error in send/recv message.
@@ -179,7 +178,7 @@ pub type AesCipher = (AesGcm<Aes256, U12>, Nonce<U12>);
 pub(crate) async fn write_head<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identifier: &str, version: &str, compression: bool, encryption: bool) -> Result<Writer<BytesMut>, StarterError> {
     stream.write_more(&MAGIC_BYTES).await?;
     let mut writer = BytesMut::new().writer();
-    writer.write_bools_2(compression, encryption)?;
+    writer.write_bools_2([compression, encryption])?;
     writer.write_string(identifier)?;
     writer.write_string(version)?;
     Ok(writer)
@@ -191,7 +190,7 @@ pub(crate) async fn read_head<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) ->
     stream.read_more(&mut magic).await?;
     if magic != MAGIC_BYTES { return Err(StarterError::InvalidStream()); }
     let mut reader = read_packet(stream).await?.reader();
-    let (read_compression, read_encryption) = reader.read_bools_2()?;
+    let [read_compression, read_encryption] = reader.read_bools_2()?;
     if read_compression != compression || read_encryption != encryption { return Err(StarterError::ClientInvalidProtocol(read_compression, read_encryption)); }
     let read_identifier = reader.read_string()?;
     if read_identifier != identifier { return Err(StarterError::ClientInvalidIdentifier(read_identifier)); }
@@ -212,9 +211,9 @@ pub(crate) async fn write_last<W: AsyncWriteExt + Unpin + Send, E>(stream: &mut 
     match last {
         Err(e) => {
             match e {
-                StarterError::ClientInvalidProtocol(_, _) => { stream.write_bools_3(false, false, false).await?; }
-                StarterError::ClientInvalidIdentifier(_) => { stream.write_bools_3(true, false, false).await?; }
-                StarterError::ClientInvalidVersion(_) => { stream.write_bools_3(true, true, false).await?; }
+                StarterError::ClientInvalidProtocol(_, _) => { stream.write_bools_3([false, false, false]).await?; }
+                StarterError::ClientInvalidIdentifier(_) => { stream.write_bools_3([true, false, false]).await?; }
+                StarterError::ClientInvalidVersion(_) => { stream.write_bools_3([true, true, false]).await?; }
                 _ => {}
             }
             #[cfg(feature = "auto_flush")]
@@ -222,7 +221,7 @@ pub(crate) async fn write_last<W: AsyncWriteExt + Unpin + Send, E>(stream: &mut 
             return Err(e);
         }
         Ok(k) => {
-            stream.write_bools_3(true, true, true).await?;
+            stream.write_bools_3([true, true, true]).await?;
             Ok(k)
         }
     }
@@ -231,7 +230,7 @@ pub(crate) async fn write_last<W: AsyncWriteExt + Unpin + Send, E>(stream: &mut 
 #[inline]
 pub(crate) async fn read_last<R: AsyncReadExt + Unpin + Send, E>(stream: &mut R, last: Result<E, StarterError>) -> Result<E, StarterError> {
     let k = last?;
-    let (state, identifier, version) = stream.read_bools_3().await?;
+    let [state, identifier, version] = stream.read_bools_3().await?;
     if !state { return Err(StarterError::ServerInvalidProtocol()) }
     if !identifier { return Err(StarterError::ServerInvalidIdentifier()) }
     if !version { return Err(StarterError::ServerInvalidVersion()) }
@@ -286,7 +285,7 @@ pub(crate) mod test {
             #[tokio::test]
             async fn incorrect() -> anyhow::Result<()> {
                 let (mut client, mut server) = create().await?;
-                crate::variable_len_reader::asynchronous::AsyncVariableWritable::write_string(&mut client, "Something incorrect.").await?;
+                crate::variable_len_reader::AsyncVariableWriter::write_string(&mut client, "Something incorrect.").await?;
                 let s = crate::$protocol::server_init(&mut server, &"a", |v| v == "1").await;
                 match crate::$protocol::server_start(&mut server, s).await {
                     Ok(_) => assert!(false), Err(e) => match e {

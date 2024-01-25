@@ -9,7 +9,7 @@
 //! use flate2::Compression;
 //! use tcp_handler::compress_encrypt::*;
 //! use tokio::net::{TcpListener, TcpStream};
-//! use variable_len_reader::{VariableReadable, VariableWritable};
+//! use variable_len_reader::{VariableReader, VariableWriter};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
@@ -83,7 +83,8 @@ use rsa::rand_core::OsRng as RsaRng;
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use rsa::traits::PublicKeyParts;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use variable_len_reader::{VariableReadable, VariableWritable};
+use variable_len_reader::{VariableReadable, VariableReader, VariableWritable, VariableWriter};
+use variable_len_reader::util::bufs::{ReadBuf, WriteBuf};
 use crate::common::{AesCipher, PacketError, read_head, read_packet, StarterError, write_head, write_packet};
 
 /// Init the client side in tcp-handler compress_encrypt protocol.
@@ -256,7 +257,7 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 /// use flate2::Compression;
 /// use tcp_handler::compress_encrypt::{client_init, client_start, send};
 /// use tokio::net::TcpStream;
-/// use variable_len_reader::VariableWritable;
+/// use variable_len_reader::VariableWriter;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<()> {
@@ -277,9 +278,9 @@ pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, messa
     let new_nonce = Aes256Gcm::generate_nonce(&mut AesRng);
     debug_assert_eq!(12, nonce.len());
     let mut encoder = DeflateEncoder::new(BytesMut::new().writer(), level);
-    encoder.write_more(&new_nonce)?;
+    encoder.write_more(&mut WriteBuf::new(&new_nonce))?;
     while message.has_remaining() {
-        let len = encoder.write_more(message.chunk())?;
+        let len = encoder.write_more(&mut WriteBuf::new(message.chunk()))?;
         message.advance(len);
     }
     let mut bytes = encoder.finish()?.into_inner();
@@ -304,7 +305,7 @@ pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, messa
 /// use bytes::Buf;
 /// use tcp_handler::compress_encrypt::{recv, server_init, server_start};
 /// use tokio::net::TcpListener;
-/// use variable_len_reader::VariableReadable;
+/// use variable_len_reader::VariableReader;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<()> {
@@ -325,12 +326,12 @@ pub async fn recv<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: AesCip
     cipher.decrypt_in_place(&nonce, &[], &mut bytes)?;
     let mut decoder = DeflateDecoder::new(BytesMut::new().writer());
     while bytes.has_remaining() {
-        let len = decoder.write_more(bytes.chunk())?;
+        let len = decoder.write_more(&mut WriteBuf::new(bytes.chunk()))?;
         bytes.advance(len);
     }
     let mut reader = decoder.finish()?.into_inner().reader();
     let mut new_nonce = [0; 12];
-    reader.read_more(&mut new_nonce)?;
+    reader.read_more(&mut ReadBuf::new(&mut new_nonce))?;
     Ok((reader.into_inner(), (cipher, Nonce::from(new_nonce))))
 }
 
@@ -340,7 +341,7 @@ mod test {
     use anyhow::Result;
     use bytes::{Buf, BufMut, BytesMut};
     use flate2::Compression;
-    use variable_len_reader::{VariableReadable, VariableWritable};
+    use variable_len_reader::{VariableReader, VariableWriter};
     use crate::compress_encrypt::{recv, send};
     use crate::common::test::{create, test_incorrect};
 

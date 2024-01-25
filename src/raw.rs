@@ -8,7 +8,7 @@
 //! use bytes::{Buf, BufMut, BytesMut};
 //! use tcp_handler::raw::*;
 //! use tokio::net::{TcpListener, TcpStream};
-//! use variable_len_reader::{VariableReadable, VariableWritable};
+//! use variable_len_reader::{VariableReader, VariableWriter};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<()> {
@@ -213,7 +213,7 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 /// use bytes::{BufMut, BytesMut};
 /// use tcp_handler::raw::{client_init, client_start, send};
 /// use tokio::net::TcpStream;
-/// use variable_len_reader::VariableWritable;
+/// use variable_len_reader::VariableWriter;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<()> {
@@ -248,7 +248,7 @@ pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, messa
 /// use bytes::Buf;
 /// use tcp_handler::raw::{recv, server_init, server_start};
 /// use tokio::net::TcpListener;
-/// use variable_len_reader::VariableReadable;
+/// use variable_len_reader::VariableReader;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<()> {
@@ -272,7 +272,7 @@ pub async fn recv<R: AsyncReadExt + Unpin + Send>(stream: &mut R) -> Result<Byte
 mod test {
     use anyhow::Result;
     use bytes::{Buf, BufMut, BytesMut};
-    use variable_len_reader::{VariableReadable, VariableWritable};
+    use variable_len_reader::{VariableReader, VariableWriter};
     use crate::raw::{recv, send};
     use crate::common::test::{create, test_incorrect};
 
