@@ -717,13 +717,14 @@ dependencies = [
 
 [[package]]
 name = "tcp-handler"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "aead",
  "aes-gcm",
  "anyhow",
  "bytes",
  "flate2",
+ "reportme",
  "rsa",
  "sha2",
  "thiserror",

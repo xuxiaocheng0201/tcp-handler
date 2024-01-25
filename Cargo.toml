@@ -1,6 +1,6 @@
 [package]
 name = "tcp-handler"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["xuxiaocheng <2762267080@qq.com>"]
 edition = "2021"
 description = "Conveniently transfer data in chunk through tokio TCP stream."
@@ -13,7 +13,7 @@ keywords = ["tcp", "tokio", "bytes", "io", "network"]
 
 [dependencies]
 thiserror = "^1.0"
-tokio = { version = "^1", default-features = false, features = ["io-util"] }
+tokio = { version = "^1.35", default-features = false, features = ["io-util"] }
 bytes = "^1.5"
 variable-len-reader = { version = "^2", features = ["bools", "async_default", "async_bools"] }
 flate2 = { version = "^1.0", optional = true }
@@ -31,9 +31,12 @@ auto_flush = []
 compression = ["dep:flate2"]
 encrypt = ["dep:rsa", "dep:aead", "dep:aes-gcm", "dep:sha2"]
 
+[build-dependencies]
+reportme = "~0.2"
+
 [dev-dependencies]
 anyhow = "^1.0"
-tokio = { version = "^1", features = ["rt-multi-thread", "macros", "net"] }
+tokio = { version = "^1.35", features = ["rt-multi-thread", "macros", "net"] }
 
 [badges]
 maintenance = { status = "actively-developed" }
