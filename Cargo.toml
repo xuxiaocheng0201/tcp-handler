@@ -1,6 +1,6 @@
 [package]
 name = "tcp-handler"
-version = "0.5.1"
+version = "0.5.2"
 authors = ["xuxiaocheng <2762267080@qq.com>"]
 edition = "2021"
 description = "Conveniently transfer data in chunk through tokio TCP stream."
@@ -15,7 +15,7 @@ keywords = ["tcp", "tokio", "bytes", "io", "network"]
 thiserror = "^1.0"
 tokio = { version = "^1.35", default-features = false, features = ["io-util"] }
 bytes = "^1.5"
-variable-len-reader = { version = "^2", features = ["bools", "async_default", "async_bools"] }
+variable-len-reader = { version = "^2.2", features = ["bools", "async_default", "async_bools", "bytes"] }
 flate2 = { version = "^1.0", optional = true }
 rsa = { version = "~0.9", default-features = false, features = ["std"], optional = true }
 aead = { version = "~0.5", default-features = false, features = ["std", "bytes"], optional = true }
@@ -40,3 +40,10 @@ tokio = { version = "^1.35", features = ["rt-multi-thread", "macros", "net"] }
 
 [badges]
 maintenance = { status = "actively-developed" }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[package.metadata.playground]
+features = ["full"]
