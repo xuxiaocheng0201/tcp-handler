@@ -84,7 +84,6 @@ use rsa::{RsaPrivateKey, RsaPublicKey};
 use rsa::traits::PublicKeyParts;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use variable_len_reader::{VariableReadable, VariableReader, VariableWritable, VariableWriter};
-use variable_len_reader::util::bufs::{ReadBuf, WriteBuf};
 use crate::common::{AesCipher, PacketError, read_head, read_packet, StarterError, write_head, write_packet};
 
 /// Init the client side in tcp-handler compress_encrypt protocol.
@@ -97,7 +96,7 @@ use crate::common::{AesCipher, PacketError, read_head, read_packet, StarterError
 ///  * `version` - Current version of your application.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::compress_encrypt::{client_init, client_start};
 /// use tokio::net::TcpStream;
@@ -131,7 +130,7 @@ pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identi
 ///  * `version` - A prediction to determine whether the client version is allowed.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::compress_encrypt::{server_init, server_start};
 /// use tokio::net::TcpListener;
@@ -149,7 +148,7 @@ pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identi
 /// ```
 ///
 /// You can get the client version from this function:
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::compress_encrypt::{server_init, server_start};
 /// use tokio::net::TcpListener;
@@ -188,7 +187,7 @@ pub async fn server_init<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) -> bool
 ///  * `last` - The return value of `tcp_handler::compress_encrypt::server_init`.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::compress_encrypt::{server_init, server_start};
 /// use tokio::net::TcpListener;
@@ -218,7 +217,7 @@ pub async fn server_start<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, last:
 ///  * `last` - The return value of `tcp_handler::compress_encrypt::client_init`.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::compress_encrypt::{client_init, client_start};
 /// use tokio::net::TcpStream;
@@ -251,7 +250,7 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 ///  * `level` - The level of compression.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use bytes::{BufMut, BytesMut};
 /// use flate2::Compression;
@@ -278,11 +277,8 @@ pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, messa
     let new_nonce = Aes256Gcm::generate_nonce(&mut AesRng);
     debug_assert_eq!(12, nonce.len());
     let mut encoder = DeflateEncoder::new(BytesMut::new().writer(), level);
-    encoder.write_more(&mut WriteBuf::new(&new_nonce))?;
-    while message.has_remaining() {
-        let len = encoder.write_more(&mut WriteBuf::new(message.chunk()))?;
-        message.advance(len);
-    }
+    encoder.write_more(&new_nonce)?;
+    encoder.write_more_buf(message)?;
     let mut bytes = encoder.finish()?.into_inner();
     cipher.encrypt_in_place(&nonce, &[], &mut bytes)?;
     write_packet(stream, &mut bytes).await?;
@@ -300,7 +296,7 @@ pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, messa
 ///  * `stream` - The tcp stream or `ReadHalf`.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use bytes::Buf;
 /// use tcp_handler::compress_encrypt::{recv, server_init, server_start};
@@ -325,13 +321,10 @@ pub async fn recv<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: AesCip
     let mut bytes = read_packet(stream).await?;
     cipher.decrypt_in_place(&nonce, &[], &mut bytes)?;
     let mut decoder = DeflateDecoder::new(BytesMut::new().writer());
-    while bytes.has_remaining() {
-        let len = decoder.write_more(&mut WriteBuf::new(bytes.chunk()))?;
-        bytes.advance(len);
-    }
+    decoder.write_more_buf(&mut bytes)?;
     let mut reader = decoder.finish()?.into_inner().reader();
     let mut new_nonce = [0; 12];
-    reader.read_more(&mut ReadBuf::new(&mut new_nonce))?;
+    reader.read_more(&mut new_nonce)?;
     Ok((reader.into_inner(), (cipher, Nonce::from(new_nonce))))
 }
 

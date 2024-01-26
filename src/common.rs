@@ -20,7 +20,7 @@ pub enum PacketError {
     /// This is due to you sending too much data at once,
     /// resulting in triggering memory safety limit
     ///
-    /// You can reduce the size of data sent each time.
+    /// You can reduce the size of data packet sent each time.
     /// Or you can change the maximum packet size by call `tcp_handler::config::set_config`.
     #[error("Packet size {0} is larger than the maximum allowed packet size {1}.")]
     TooLarge(usize, usize),
@@ -51,21 +51,18 @@ fn check_bytes_len(len: usize) -> Result<(), PacketError> {
 /// ```
 pub(crate) async fn write_packet<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, bytes: &mut B) -> Result<(), PacketError> {
     check_bytes_len(bytes.remaining())?;
-    stream.write_u128_varint(bytes.remaining() as u128).await?;
-    while bytes.has_remaining() {
-        let len = stream.write_more(bytes.chunk()).await?;
-        bytes.advance(len);
-    }
+    stream.write_usize_varint(bytes.remaining()).await?;
+    stream.write_more_buf(bytes).await?;
     #[cfg(feature = "auto_flush")]
     stream.flush().await?;
     Ok(())
 }
 
 pub(crate) async fn read_packet<R: AsyncReadExt + Unpin + Send>(stream: &mut R) -> Result<BytesMut, PacketError> {
-    let len = stream.read_u128_varint().await? as usize;
+    let len = stream.read_usize_varint().await?;
     check_bytes_len(len)?;
-    let mut buf = BytesMut::zeroed(len);
-    stream.read_more(&mut buf).await?;
+    let mut buf = BytesMut::with_capacity(len);
+    stream.read_more_buf(len, &mut buf).await?;
     Ok(buf)
 }
 
@@ -156,27 +153,38 @@ impl TryFrom<StarterError> for Error {
 /// r.nextInt(0, 255); r.nextInt(0, 255);
 /// r.nextInt(0, 255); r.nextInt(0, 255);
 /// ```
-/// The last two bytes is the version of the tcp-handler protocol.
-static MAGIC_BYTES: [u8; 6] = [208, 8, 166, 104, 0, 0];
+static MAGIC_BYTES: [u8; 4] = [208, 8, 166, 104];
+/// The version of the tcp-handler protocol.
+///
+/// | version code | crate version |
+/// | ------------ | ------------  |
+/// | 0            | <=0.5.2       |
+static MAGIC_VERSION: u16 = 0;
 
-#[cfg(feature = "encrypt")]
 /// The cipher in encryption mode.
 /// You **must** update this value after each call to the send/recv function.
+#[cfg(feature = "encrypt")]
 pub type AesCipher = (AesGcm<Aes256, U12>, Nonce<U12>);
 
 /// ```text
-///    ┌─ Magic bytes
-///    │    ┌─ Protocol number (compression and encryption)
-///    │    │     ┌─ Application identifier
-///    │    │     │     ┌─ Application version
-///    v    v     v     v
-/// ┌─────┬────┬─────┬─────┐
-/// │ *** │ 01 │ *** │ *** │
-/// └─────┴────┴─────┴─────┘
+///                                     ┌─ Protocol number
+///   ┌─ Magic bytes                    │    ┌─ Application identifier
+///   │     ┌─ Magic version            │    │       ┌─ Application version
+///   v     v                           v    v       v
+/// ┌─────┬────┐                      ┌────┬───────┬───────┐
+/// │ *** │ ** │ <- Write in stream   │ ** │ ***** │ ***** │ <- Returned writer
+/// └─────┴────┘                      └────┴───────┴───────┘
+/// ```
+/// Then should call `write_packet` to write in stream.
+/// ```rust,ignore
+/// let writer = write_head(stream, identifier, version, true, false).await?;
+/// // Write something else in the head packet.
+/// write_packet(stream, &mut writer.into_inner()).await?;
 /// ```
 #[inline]
 pub(crate) async fn write_head<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identifier: &str, version: &str, compression: bool, encryption: bool) -> Result<Writer<BytesMut>, StarterError> {
     stream.write_more(&MAGIC_BYTES).await?;
+    stream.write_u16_raw_be(MAGIC_VERSION).await?;
     let mut writer = BytesMut::new().writer();
     writer.write_bools_2([compression, encryption])?;
     writer.write_string(identifier)?;
@@ -189,6 +197,7 @@ pub(crate) async fn read_head<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) ->
     let mut magic = vec![0; MAGIC_BYTES.len()];
     stream.read_more(&mut magic).await?;
     if magic != MAGIC_BYTES { return Err(StarterError::InvalidStream()); }
+    let _protocol_version = stream.read_u16_raw_be().await?; // TODO
     let mut reader = read_packet(stream).await?.reader();
     let [read_compression, read_encryption] = reader.read_bools_2()?;
     if read_compression != compression || read_encryption != encryption { return Err(StarterError::ClientInvalidProtocol(read_compression, read_encryption)); }
@@ -200,10 +209,10 @@ pub(crate) async fn read_head<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) ->
 }
 
 /// ```text
-///    ┌─ State number (protocol, identifier and version)
-///    v
+///   ┌─ State number (protocol, identifier and version)
+///   v
 /// ┌─────┐
-/// │ 000 │
+/// │ *** │
 /// └─────┘
 /// ```
 #[inline]
@@ -246,8 +255,7 @@ pub(crate) mod test {
     use tokio::net::{TcpListener, TcpStream};
 
     pub(crate) async fn create() -> Result<(TcpStream, TcpStream)> {
-        let addr = "localhost:0";
-        let server = TcpListener::bind(addr).await?;
+        let server = TcpListener::bind("localhost:0").await?;
         let client = TcpStream::connect(server.local_addr()?).await?;
         let (server, _) = server.accept().await?;
         Ok((client, server))

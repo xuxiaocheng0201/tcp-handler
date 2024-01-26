@@ -65,7 +65,7 @@ use crate::common::{PacketError, read_head, read_last, read_packet, StarterError
 ///  * `version` - Current version of your application.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::raw::{client_init, client_start};
 /// use tokio::net::TcpStream;
@@ -95,7 +95,7 @@ pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identi
 ///  * `version` - A prediction to determine whether the client version is allowed.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::raw::{server_init, server_start};
 /// use tokio::net::TcpListener;
@@ -112,7 +112,7 @@ pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identi
 /// ```
 ///
 /// You can get the client version from this function:
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::raw::{server_init, server_start};
 /// use tokio::net::TcpListener;
@@ -147,7 +147,7 @@ pub async fn server_init<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) -> bool
 ///  * `last` - The return value of `tcp_handler::raw::server_init`.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::raw::{server_init, server_start};
 /// use tokio::net::TcpListener;
@@ -178,7 +178,7 @@ pub async fn server_start<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, last:
 ///  * `last` - The return value of `tcp_handler::raw::client_init`.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::raw::{client_init, client_start};
 /// use tokio::net::TcpStream;
@@ -208,7 +208,7 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 ///  * `message` - The message to send.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use bytes::{BufMut, BytesMut};
 /// use tcp_handler::raw::{client_init, client_start, send};
@@ -243,7 +243,7 @@ pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, messa
 ///  * `stream` - The tcp stream or `ReadHalf`.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use bytes::Buf;
 /// use tcp_handler::raw::{recv, server_init, server_start};

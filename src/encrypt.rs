@@ -78,7 +78,6 @@ use rsa::traits::PublicKeyParts;
 use sha2::Sha512;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use variable_len_reader::{VariableReadable, VariableReader, VariableWritable, VariableWriter};
-use variable_len_reader::util::bufs::{ReadBuf, WriteBuf};
 use crate::common::{AesCipher, PacketError, read_head, read_last, read_packet, StarterError, write_head, write_last, write_packet};
 
 /// Init the client side in tcp-handler encrypt protocol.
@@ -91,7 +90,7 @@ use crate::common::{AesCipher, PacketError, read_head, read_last, read_packet, S
 ///  * `version` - Current version of your application.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::encrypt::{client_init, client_start};
 /// use tokio::net::TcpStream;
@@ -125,7 +124,7 @@ pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identi
 ///  * `version` - A prediction to determine whether the client version is allowed.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::encrypt::{server_init, server_start};
 /// use tokio::net::TcpListener;
@@ -143,7 +142,7 @@ pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identi
 /// ```
 ///
 /// You can get the client version from this function:
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::encrypt::{server_init, server_start};
 /// use tokio::net::TcpListener;
@@ -182,7 +181,7 @@ pub async fn server_init<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) -> bool
 ///  * `last` - The return value of `tcp_handler::encrypt::server_init`.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::encrypt::{server_init, server_start};
 /// use tokio::net::TcpListener;
@@ -207,7 +206,7 @@ pub async fn server_start<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, last:
     let cipher = Aes256Gcm::new(&aes);
     let mut writer = BytesMut::new().writer();
     writer.write_u8_vec(&encrypted_aes)?;
-    writer.write_more(&mut WriteBuf::new(&nonce))?;
+    writer.write_more(&nonce)?;
     write_packet(stream, &mut writer.into_inner()).await?;
     Ok((cipher, nonce))
 }
@@ -221,7 +220,7 @@ pub async fn server_start<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, last:
 ///  * `last` - The return value of `tcp_handler::encrypt::client_init`.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::encrypt::{client_init, client_start};
 /// use tokio::net::TcpStream;
@@ -241,7 +240,7 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
     let mut reader = read_packet(stream).await?.reader();
     let encrypted_aes = reader.read_u8_vec()?;
     let mut nonce = [0; 12];
-    reader.read_more(&mut ReadBuf::new(&mut nonce))?;
+    reader.read_more(&mut nonce)?;
     let aes = rsa.decrypt(Oaep::new::<Sha512>(), &encrypted_aes)?;
     let cipher = Aes256Gcm::new_from_slice(&aes)?;
     let nonce = Nonce::from(nonce);
@@ -260,7 +259,7 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 ///  * `message` - The message to send.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use bytes::{BufMut, BytesMut};
 /// use tcp_handler::encrypt::{client_init, client_start, send};
@@ -308,7 +307,7 @@ pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, messa
 ///  * `stream` - The tcp stream or `ReadHalf`.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use bytes::Buf;
 /// use tcp_handler::encrypt::{recv, server_init, server_start};
@@ -334,7 +333,7 @@ pub async fn recv<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: AesCip
     cipher.decrypt_in_place(&nonce, &[], &mut message)?;
     let mut reader = message.reader();
     let mut new_nonce = [0; 12];
-    reader.read_more(&mut ReadBuf::new(&mut new_nonce))?;
+    reader.read_more(&mut new_nonce)?;
     Ok((reader.into_inner(), (cipher, Nonce::from(new_nonce))))
 }
 

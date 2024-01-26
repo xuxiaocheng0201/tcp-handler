@@ -61,7 +61,6 @@ use bytes::{Buf, BufMut, BytesMut};
 use flate2::Compression;
 use flate2::write::{DeflateDecoder, DeflateEncoder};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use variable_len_reader::util::bufs::WriteBuf;
 use variable_len_reader::VariableWritable;
 use crate::common::{PacketError, read_head, read_packet, StarterError, write_head, write_packet};
 
@@ -75,7 +74,7 @@ use crate::common::{PacketError, read_head, read_packet, StarterError, write_hea
 ///  * `version` - Current version of your application.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::compress::{client_init, client_start};
 /// use tokio::net::TcpStream;
@@ -105,7 +104,7 @@ pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identi
 ///  * `version` - A prediction to determine whether the client version is allowed.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::compress::{server_init, server_start};
 /// use tokio::net::TcpListener;
@@ -122,7 +121,7 @@ pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identi
 /// ```
 ///
 /// You can get the client version from this function:
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::compress::{server_init, server_start};
 /// use tokio::net::TcpListener;
@@ -157,7 +156,7 @@ pub async fn server_init<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) -> bool
 ///  * `last` - The return value of `tcp_handler::compress::server_init`.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::compress::{server_init, server_start};
 /// use tokio::net::TcpListener;
@@ -186,7 +185,7 @@ pub async fn server_start<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, last:
 ///  * `last` - The return value of `tcp_handler::compress::client_init`.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use tcp_handler::compress::{client_init, client_start};
 /// use tokio::net::TcpStream;
@@ -218,7 +217,7 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 ///  * `level` - The level of compression.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use bytes::{BufMut, BytesMut};
 /// use flate2::Compression;
@@ -240,10 +239,7 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 /// ```
 pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, message: &mut B, level: Compression) -> Result<(), PacketError> {
     let mut encoder = DeflateEncoder::new(BytesMut::new().writer(), level);
-    while message.has_remaining() {
-        let len = encoder.write_more(&mut WriteBuf::new(message.chunk()))?;
-        message.advance(len);
-    }
+    encoder.write_more_buf(message)?;
     let mut bytes = encoder.finish()?.into_inner();
     write_packet(stream, &mut bytes).await
 }
@@ -259,7 +255,7 @@ pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, messa
 ///  * `stream` - The tcp stream or `ReadHalf`.
 ///
 /// # Example
-/// ```no_run
+/// ```rust,no_run
 /// use anyhow::Result;
 /// use bytes::Buf;
 /// use tcp_handler::compress::{recv, server_init, server_start};
@@ -281,10 +277,7 @@ pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, messa
 pub async fn recv<R: AsyncReadExt + Unpin + Send>(stream: &mut R) -> Result<BytesMut, PacketError> {
     let mut bytes = read_packet(stream).await?;
     let mut decoder = DeflateDecoder::new(BytesMut::new().writer());
-    while bytes.has_remaining() {
-        let len = decoder.write_more(&mut WriteBuf::new(bytes.chunk()))?;
-        bytes.advance(len);
-    }
+    decoder.write_more_buf(&mut bytes)?;
     Ok(decoder.finish()?.into_inner())
 }
 
