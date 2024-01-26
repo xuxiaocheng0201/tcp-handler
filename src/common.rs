@@ -49,7 +49,7 @@ fn check_bytes_len(len: usize) -> Result<(), PacketError> {
 /// │ ** │ ****** │
 /// └────┴────────┘
 /// ```
-pub(crate) async fn write_packet<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, bytes: &mut B) -> Result<(), PacketError> {
+pub(crate) async fn write_packet<W: AsyncWriteExt + Unpin + Send, B: Buf + Send>(stream: &mut W, bytes: &mut B) -> Result<(), PacketError> {
     check_bytes_len(bytes.remaining())?;
     stream.write_usize_varint(bytes.remaining()).await?;
     stream.write_more_buf(bytes).await?;

@@ -228,7 +228,7 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 /// }
 /// ```
 #[inline]
-pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, message: &mut B) -> Result<(), PacketError> {
+pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf + Send>(stream: &mut W, message: &mut B) -> Result<(), PacketError> {
     write_packet(stream, message).await
 }
 
