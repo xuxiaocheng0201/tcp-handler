@@ -7,17 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* config支持序列化/反序列化。
+
+### Changed
+
+* 更新依赖。
+
 ## [0.5.2] - 2024-1-26
 
 ### Changed
 
-* 再次更新依赖
+* 再次更新依赖。
 
 ## [0.5.1] - 2024-1-25
 
 ### Changed
 
-* 更新依赖
+* 更新依赖。
 
 ## [0.5.0] - 2023-12-28
 

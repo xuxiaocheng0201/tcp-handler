@@ -717,7 +717,7 @@ dependencies = [
 
 [[package]]
 name = "tcp-handler"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "aead",
  "aes-gcm",
@@ -726,6 +726,7 @@ dependencies = [
  "flate2",
  "reportme",
  "rsa",
+ "serde",
  "sha2",
  "thiserror",
  "tokio",
@@ -868,9 +869,9 @@ dependencies = [
 
 [[package]]
 name = "variable-len-reader"
-version = "2.2.0"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "622f1e906d7f85f607ab7cb8c270ee10330af1edd99bd6547479602eed96ac4b"
+checksum = "dc852a42e6ce9d73bbe183a804a5bef23d421b19024593db308d308f2c71b6bc"
 dependencies = [
  "bytes",
  "pin-project-lite",

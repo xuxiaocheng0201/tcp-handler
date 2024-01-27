@@ -1,6 +1,6 @@
 [package]
 name = "tcp-handler"
-version = "0.5.2"
+version = "0.5.3"
 authors = ["xuxiaocheng <2762267080@qq.com>"]
 edition = "2021"
 description = "Conveniently transfer data in chunk through tokio TCP stream."
@@ -15,12 +15,13 @@ keywords = ["tcp", "tokio", "bytes", "io", "network"]
 thiserror = "^1.0"
 tokio = { version = "^1.35", default-features = false, features = ["io-util"] }
 bytes = "^1.5"
-variable-len-reader = { version = "^2.2", features = ["bools", "async_default", "async_bools", "bytes"] }
+variable-len-reader = { version = "^2.3", features = ["bools", "async_default", "async_bools", "bytes"] }
 flate2 = { version = "^1.0", optional = true }
 rsa = { version = "~0.9", default-features = false, features = ["std"], optional = true }
 aead = { version = "~0.5", default-features = false, features = ["std", "bytes"], optional = true }
 aes-gcm = { version = "~0.10", default-features = false, features = ["std", "aes", "rand_core"], optional = true }
 sha2 = { version = "~0.10", default-features = false, features = ["std"], optional = true }
+serde = { version = "^1", features = ["derive"], optional = true }
 
 [profile.dev.package.num-bigint-dig]
 opt-level = 3 # Speed up rsa key gen.
@@ -30,6 +31,7 @@ default = ["auto_flush", "compression", "encrypt"]
 auto_flush = []
 compression = ["dep:flate2"]
 encrypt = ["dep:rsa", "dep:aead", "dep:aes-gcm", "dep:sha2"]
+serde = ["dep:serde"]
 
 [build-dependencies]
 reportme = "~0.2"
@@ -46,4 +48,4 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [package.metadata.playground]
-features = ["full"]
+features = ["default", "serde"]

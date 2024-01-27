@@ -25,6 +25,7 @@ use std::sync::RwLock;
 /// # }
 /// ```
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 pub struct Config {
     /// `max_packet_size` is the maximum size of a packet in bytes.
     /// It is used to limit the size of a packet that can be received or sent.
