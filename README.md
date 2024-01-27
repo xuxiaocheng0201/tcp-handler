@@ -12,6 +12,9 @@
 
 More conveniently use `tokio::net::TcpStream` to transfer `bytes::Bytes` data chunks.
 
+See [tcp-server](https://crates.io/crates/tcp-server) and [tcp-client](https://crates.io/crates/tcp-client)
+for conveniently building your tcp application. 
+
 
 # Features
 

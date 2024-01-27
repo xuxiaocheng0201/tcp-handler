@@ -12,8 +12,11 @@
 
 更便捷地使用`tokio::net::TcpStream`传输`bytes::Bytes`数据块。
 
+如果需要更方便地构建你的TCP应用，请参考
+[tcp-server](https://crates.io/crates/tcp-server) 和 [tcp-client](https://crates.io/crates/tcp-client)。
 
-# 特性
+
+# 特点
 
 * 基于 [tokio](https://crates.io/crates/tokio) 和 [bytes](https://crates.io/crates/bytes) 库。
 * 支持 `tokio::net::TcpStream` 的 `ReadHalf` 和 `WriteHalf`。
