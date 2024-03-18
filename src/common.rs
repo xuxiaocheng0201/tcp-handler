@@ -1,16 +1,9 @@
 //! Common utilities for this crate.
 
-use std::io::Error;
-use aead::consts::U12;
-use aead::Error as AesGcmError;
-use aes_gcm::aes::Aes256;
-use aes_gcm::aes::cipher::InvalidLength;
-use aes_gcm::{AesGcm, Nonce};
-use bytes::buf::{Reader, Writer};
-use bytes::{Buf, BufMut, BytesMut};
+use std::io::{Cursor, Error, Read, Write};
+use bytes::Buf;
 use thiserror::Error;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use variable_len_reader::{AsyncVariableReader, AsyncVariableWriter, VariableReader, VariableWriter};
+use tokio::io::{AsyncRead, AsyncWrite};
 use crate::config::get_max_packet_size;
 
 /// Error in send/recv message.
@@ -18,10 +11,10 @@ use crate::config::get_max_packet_size;
 pub enum PacketError {
     /// The packet size is larger than the maximum allowed packet size.
     /// This is due to you sending too much data at once,
-    /// resulting in triggering memory safety limit
+    /// resulting in triggering memory safety limit.
     ///
     /// You can reduce the size of data packet sent each time.
-    /// Or you can change the maximum packet size by call `tcp_handler::config::set_config`.
+    /// Or you can change the maximum packet size by call [tcp_handler::config::set_config].
     #[error("Packet size {0} is larger than the maximum allowed packet size {1}.")]
     TooLarge(usize, usize),
 
@@ -30,47 +23,25 @@ pub enum PacketError {
     IO(#[from] Error),
 
     /// During encrypting/decrypting bytes.
-    #[cfg(feature = "encrypt")]
+    #[cfg(feature = "encryption")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
     #[error("During encrypting/decrypting bytes.")]
-    AES(#[from] AesGcmError)
-}
+    AES(#[from] aes_gcm::aead::Error),
 
-#[inline]
-fn check_bytes_len(len: usize) -> Result<(), PacketError> {
-    let config = get_max_packet_size();
-    if len > config { Err(PacketError::TooLarge(len, config)) } else { Ok(()) }
+    /// Broken stream cipher. This is a fatal error.
+    ///
+    /// When another error returned during send/recv, the stream is broken because no [Cipher] received.
+    /// In order not to panic, marks this stream as broken and returns this error.
+    #[cfg(feature = "encryption")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
+    #[error("Broken stream.")]
+    Broken(),
 }
-
-/// ```text
-///   ┌─ Packet length (in varint)
-///   │    ┌─ Packet message
-///   v    v
-/// ┌────┬────────┐
-/// │ ** │ ****** │
-/// └────┴────────┘
-/// ```
-pub(crate) async fn write_packet<W: AsyncWriteExt + Unpin + Send, B: Buf + Send>(stream: &mut W, bytes: &mut B) -> Result<(), PacketError> {
-    check_bytes_len(bytes.remaining())?;
-    stream.write_usize_varint(bytes.remaining()).await?;
-    stream.write_more_buf(bytes).await?;
-    #[cfg(feature = "auto_flush")]
-    stream.flush().await?;
-    Ok(())
-}
-
-pub(crate) async fn read_packet<R: AsyncReadExt + Unpin + Send>(stream: &mut R) -> Result<BytesMut, PacketError> {
-    let len = stream.read_usize_varint().await?;
-    check_bytes_len(len)?;
-    let mut buf = BytesMut::with_capacity(len);
-    stream.read_more_buf(len, &mut buf).await?;
-    Ok(buf)
-}
-
 
 /// Error in init/start protocol.
 #[derive(Error, Debug)]
 pub enum StarterError {
-    /// Magic bytes isn't matched.
+    /// [MAGIC_BYTES] isn't matched. Or the [MAGIC_VERSION] is no longer supported.
     /// Please confirm that you are connected to the correct address.
     #[error("Invalid stream. MAGIC is not matched.")]
     InvalidStream(),
@@ -78,8 +49,8 @@ pub enum StarterError {
     /// Incompatible tcp-handler protocol.
     /// Please check whether you use the same protocol between client and server.
     /// This error will be thrown in **server** side.
-    #[error("Incompatible protocol. compression: {0}, encryption: {1}")]
-    ClientInvalidProtocol(bool, bool),
+    #[error("Incompatible protocol. received protocol: {0:?}")]
+    ClientInvalidProtocol(ProtocolVariant),
 
     /// Invalid application identifier.
     /// Please confirm that you are connected to the correct application,
@@ -122,30 +93,32 @@ pub enum StarterError {
     Packet(#[from] PacketError),
 
     /// During generating/encrypting/decrypting rsa key.
-    #[cfg(feature = "encrypt")]
+    #[cfg(feature = "encryption")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
     #[error("During generating/encrypting/decrypting rsa key.")]
     RSA(#[from] rsa::Error),
 
     /// During generating/encrypting/decrypting aes key.
-    #[cfg(feature = "encrypt")]
+    #[cfg(feature = "encryption")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
     #[error("During generating/encrypting/decrypting aes key.")]
-    AES(#[from] InvalidLength),
+    AES(#[from] aes_gcm::aes::cipher::InvalidLength),
 }
 
 impl TryFrom<StarterError> for Error {
     type Error = StarterError;
 
     fn try_from(value: StarterError) -> Result<Self, Self::Error> {
-        match value {
-            StarterError::IO(e) => { Ok(e) }
-            StarterError::Packet(p) => match p {
-                PacketError::IO(e) => { Ok(e) }
-                _ => { Err(p.into()) }
-            }
-            _ => Err(value)
+        if let StarterError::IO(e) = value {
+            return Ok(e);
         }
+        if let StarterError::Packet(PacketError::IO(e)) = value {
+            return Ok(e);
+        }
+        Err(value)
     }
 }
+
 
 /// The MAGIC is generated in j-shell environment:
 /// ```java
@@ -154,6 +127,7 @@ impl TryFrom<StarterError> for Error {
 /// r.nextInt(0, 255); r.nextInt(0, 255);
 /// ```
 static MAGIC_BYTES: [u8; 4] = [208, 8, 166, 104];
+
 /// The version of the tcp-handler protocol.
 ///
 /// | version code | crate version |
@@ -161,189 +135,226 @@ static MAGIC_BYTES: [u8; 4] = [208, 8, 166, 104];
 /// | 0            | <=0.5.2       |
 static MAGIC_VERSION: u16 = 0;
 
-/// The cipher in encryption mode.
-/// You **must** update this value after each call to the send/recv function.
-#[cfg(feature = "encrypt")]
-pub type AesCipher = (AesGcm<Aes256, U12>, Nonce<U12>);
+/// The variants of the protocol.
+#[derive(Debug, Copy, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum ProtocolVariant {
+    /// See [crate::raw].
+    Raw,
+    /// See [crate::compress].
+    #[cfg(feature = "compression")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "compression")))]
+    Compression,
+    /// See [crate::encrypt].
+    #[cfg(feature = "encryption")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
+    Encryption,
+    /// See [crate::compress_encrypt].
+    #[cfg(feature = "compression_encrypt")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "compression_encrypt")))]
+    CompressEncryption,
+}
+
+impl From<[bool; 2]> for ProtocolVariant {
+    fn from(value: [bool; 2]) -> Self {
+        match value {
+            [true, false] => ProtocolVariant::Raw,
+            #[cfg(feature = "compression")]
+            [false, true] => ProtocolVariant::Compression,
+            #[cfg(feature = "encryption")]
+            [true, false] => ProtocolVariant::Encryption,
+            #[cfg(feature = "compression_encrypt")]
+            [true, true] => ProtocolVariant::CompressEncryption,
+        }
+    }
+}
+
+impl From<ProtocolVariant> for [bool; 2] {
+    fn from(value: ProtocolVariant) -> Self {
+        match value {
+            ProtocolVariant::Raw => [true, false],
+            #[cfg(feature = "compression")]
+            ProtocolVariant::Compression => [false, true],
+            #[cfg(feature = "encryption")]
+            ProtocolVariant::Encryption => [true, false],
+            #[cfg(feature = "compression_encrypt")]
+            ProtocolVariant::CompressEncryption => [true, true],
+        }
+    }
+}
 
 /// ```text
-///                                     ┌─ Protocol number
-///   ┌─ Magic bytes                    │    ┌─ Application identifier
-///   │     ┌─ Magic version            │    │       ┌─ Application version
-///   v     v                           v    v       v
-/// ┌─────┬────┐                      ┌────┬───────┬───────┐
-/// │ *** │ ** │ <- Write in stream   │ ** │ ***** │ ***** │ <- Returned writer
-/// └─────┴────┘                      └────┴───────┴───────┘
-/// ```
-/// Then should call `write_packet` to write in stream.
-/// ```rust,ignore
-/// let writer = write_head(stream, identifier, version, true, false).await?;
-/// // Write something else in the head packet.
-/// write_packet(stream, &mut writer.into_inner()).await?;
+///   ┌─ Magic bytes
+///   │     ┌─ Magic version
+///   │     │   ┌─ Protocol variant
+///   v     v   v
+/// ┌─────┬────┬────┐
+/// │ *** │ ** │ ** │
+/// └─────┴────┴────┘
 /// ```
 #[inline]
-pub(crate) async fn write_head<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identifier: &str, version: &str, compression: bool, encryption: bool) -> Result<Writer<BytesMut>, StarterError> {
+pub(crate) async fn write_head<W: AsyncWrite + Unpin>(stream: &mut W, protocol: ProtocolVariant) -> Result<(), StarterError> {
+    use variable_len_reader::asynchronous::writer::AsyncVariableWriter;
     stream.write_more(&MAGIC_BYTES).await?;
     stream.write_u16_raw_be(MAGIC_VERSION).await?;
-    let mut writer = BytesMut::new().writer();
-    writer.write_bools_2([compression, encryption])?;
-    writer.write_string(identifier)?;
-    writer.write_string(version)?;
-    Ok(writer)
+    stream.write_bools_2(protocol.into()).await?;
+    Ok(())
 }
 
+/// See [write_head].
 #[inline]
-pub(crate) async fn read_head<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) -> bool>(stream: &mut R, identifier: &str, version: P, compression: bool, encryption: bool) -> Result<Reader<BytesMut>, StarterError> {
-    let mut magic = vec![0; MAGIC_BYTES.len()];
+pub(crate) async fn read_head<R: AsyncRead + Unpin>(stream: &mut R, protocol: ProtocolVariant) -> Result<u16, StarterError> {
+    use variable_len_reader::asynchronous::reader::AsyncVariableReader;
+    let mut magic = [0; 4];
     stream.read_more(&mut magic).await?;
     if magic != MAGIC_BYTES { return Err(StarterError::InvalidStream()); }
-    let _protocol_version = stream.read_u16_raw_be().await?; // TODO
-    let mut reader = read_packet(stream).await?.reader();
-    let [read_compression, read_encryption] = reader.read_bools_2()?;
-    if read_compression != compression || read_encryption != encryption { return Err(StarterError::ClientInvalidProtocol(read_compression, read_encryption)); }
-    let read_identifier = reader.read_string()?;
-    if read_identifier != identifier { return Err(StarterError::ClientInvalidIdentifier(read_identifier)); }
-    let read_version = reader.read_string()?;
-    if !version(&read_version) { return Err(StarterError::ClientInvalidVersion(read_version)); }
-    Ok(reader)
+    let version = stream.read_u16_raw_be().await?;
+    if version != MAGIC_VERSION { return Err(StarterError::InvalidStream()); }
+    let protocol_read = stream.read_bools_2().await?.into();
+    if protocol_read != protocol { return Err(StarterError::ClientInvalidProtocol(protocol_read)); }
+    Ok(version)
+}
+
+
+/// The cipher in encryption mode.
+/// You **must** update this value after each call to the send/recv function.
+#[cfg(feature = "encryption")]
+pub(crate) type InnerAesCipher = (aes_gcm::Aes256Gcm, aes_gcm::Nonce<aes_gcm::aead::consts::U12>);
+
+
+#[inline]
+fn check_bytes_len(len: usize) -> Result<(), PacketError> {
+    let config = get_max_packet_size();
+    if len > config { Err(PacketError::TooLarge(len, config)) } else { Ok(()) }
 }
 
 /// ```text
-///   ┌─ State number (protocol, identifier and version)
+///   ┌─ Packet length (in varint)
+///   │    ┌─ Packet message
+///   v    v
+/// ┌────┬────────┐
+/// │ ** │ ****** │
+/// └────┴────────┘
+/// ```
+pub(crate) async fn write_packet<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, bytes: &mut B) -> Result<(), PacketError> {
+    use variable_len_reader::asynchronous::writer::AsyncVariableWriter;
+    check_bytes_len(bytes.remaining())?;
+    stream.write_usize_varint_ap(bytes.remaining()).await?;
+    stream.write_more_buf(bytes).await?;
+    Ok(())
+}
+
+/// See [write_packet].
+pub(crate) async fn read_packet<R: AsyncRead + Unpin>(stream: &mut R) -> Result<impl Buf, PacketError> {
+    use variable_len_reader::asynchronous::reader::AsyncVariableReader;
+    let len = stream.read_usize_varint_ap().await?;
+    check_bytes_len(len)?;
+    let mut buf = vec![0; len];
+    stream.read_more_buf(&mut buf).await?;
+    Ok(Cursor::new(buf))
+}
+
+
+/// The cipher in encryption mode.
+#[cfg(feature = "encryption")]
+#[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
+pub struct Cipher {
+    cipher: tokio::sync::Mutex<Option<InnerAesCipher>>,
+}
+
+#[cfg(feature = "encryption")]
+impl std::fmt::Debug for Cipher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Cipher")
+            .field("cipher", self.cipher.try_lock()
+                .map_or_else(|_| &"<locked>",
+                             |inner| if (*inner).is_some() { &"<unlocked>" } else { &"<broken>" }))
+            .finish()
+    }
+}
+
+#[cfg(feature = "encryption")]
+impl Cipher {
+    pub(crate) fn new(cipher: InnerAesCipher) -> Self {
+        Self {
+            cipher: tokio::sync::Mutex::new(Some(cipher))
+        }
+    }
+
+    pub(crate) async fn get<'a>(&'a self) -> Result<(InnerAesCipher, tokio::sync::MutexGuard<Option<InnerAesCipher>>), PacketError> {
+        let mut guard = self.cipher.lock().await;
+        let cipher = (*guard).take().ok_or(PacketError::Broken())?;
+        Ok((cipher, guard))
+    }
+
+    #[inline]
+    pub(crate) fn reset(mut guard: tokio::sync::MutexGuard<Option<InnerAesCipher>>, cipher: InnerAesCipher) {
+        (*guard).replace(cipher);
+    }
+}
+
+
+/// ```text
+///   ┌─ Application identifier
+///   │       ┌─ Application version
+///   v       v
+/// ┌───────┬───────┐
+/// │ ***** │ ***** │
+/// └───────┴───────┘
+#[inline]
+pub(crate) fn write_application<W: Write>(buffer: &mut W, identifier: &str, version: &str) -> Result<(), StarterError> {
+    use variable_len_reader::synchronous::writer::VariableWriter;
+    buffer.write_string(identifier)?;
+    buffer.write_string(version)?;
+    Ok(())
+}
+
+/// See [write_application].
+#[inline]
+pub(crate) fn read_application<R: Read, P: FnOnce(&str) -> bool>(buffer: &mut R, identifier: &str, version: P) -> Result<String, StarterError> {
+    use variable_len_reader::synchronous::reader::VariableReader;
+    let identifier_read = buffer.read_string()?;
+    if identifier_read != identifier { return Err(StarterError::ClientInvalidIdentifier(identifier_read)); }
+    let version_read = buffer.read_string()?;
+    if !version(&version_read) { return Err(StarterError::ClientInvalidVersion(version_read)); }
+    Ok(version_read)
+}
+
+
+/// ```text
+///   ┌─ State bytes
 ///   v
 /// ┌─────┐
 /// │ *** │
 /// └─────┘
 /// ```
 #[inline]
-pub(crate) async fn write_last<W: AsyncWriteExt + Unpin + Send, E>(stream: &mut W, last: Result<E, StarterError>) -> Result<E, StarterError> {
+pub(crate) fn write_last<W: Write, E>(buffer: &mut W, last: Result<E, StarterError>) -> Result<E, StarterError> {
+    use variable_len_reader::synchronous::writer::VariableWriter;
     match last {
         Err(e) => {
-            match e {
-                StarterError::ClientInvalidProtocol(_, _) => { stream.write_bools_3([false, false, false]).await?; }
-                StarterError::ClientInvalidIdentifier(_) => { stream.write_bools_3([true, false, false]).await?; }
-                StarterError::ClientInvalidVersion(_) => { stream.write_bools_3([true, true, false]).await?; }
+            match e { // FIXME: report the current protocol and update the protocol version.
+                StarterError::ClientInvalidProtocol(_) => { buffer.write_bools_3([false, false, false])?; }
+                StarterError::ClientInvalidIdentifier(_) => { buffer.write_bools_3([true, false, false])?; }
+                StarterError::ClientInvalidVersion(_) => { buffer.write_bools_3([true, true, false])?; }
                 _ => {}
             }
-            #[cfg(feature = "auto_flush")]
-            let _ = stream.flush().await; // Ignore error.
             return Err(e);
         }
         Ok(k) => {
-            stream.write_bools_3([true, true, true]).await?;
+            buffer.write_bools_3([true, true, true])?;
             Ok(k)
         }
     }
 }
 
 #[inline]
-pub(crate) async fn read_last<R: AsyncReadExt + Unpin + Send, E>(stream: &mut R, last: Result<E, StarterError>) -> Result<E, StarterError> {
-    let k = last?;
-    let [state, identifier, version] = stream.read_bools_3().await?;
+pub(crate) fn read_last<R: Read, E>(buffer: &mut R, last: Result<E, StarterError>) -> Result<E, StarterError> {
+    use variable_len_reader::synchronous::reader::VariableReader;
+    let extra = last?;
+    let [state, identifier, version] = buffer.read_bools_3()?;
     if !state { return Err(StarterError::ServerInvalidProtocol()) }
     if !identifier { return Err(StarterError::ServerInvalidIdentifier()) }
     if !version { return Err(StarterError::ServerInvalidVersion()) }
-    Ok(k)
-}
-
-
-#[cfg(test)]
-pub(crate) mod test {
-    use anyhow::Result;
-    use bytes::{Buf, Bytes};
-    use flate2::Compression;
-    use tokio::net::{TcpListener, TcpStream};
-
-    pub(crate) async fn create() -> Result<(TcpStream, TcpStream)> {
-        let server = TcpListener::bind("localhost:0").await?;
-        let client = TcpStream::connect(server.local_addr()?).await?;
-        let (server, _) = server.accept().await?;
-        Ok((client, server))
-    }
-
-    #[tokio::test]
-    async fn get_version() -> Result<()> {
-        let (mut client, mut server) = create().await?;
-        let mut version = None;
-        let c = crate::raw::client_init(&mut client, &"a", &"1").await;
-        let s = crate::raw::server_init(&mut server, &"a", |v| { version = Some(v.to_string()); v == "1" }).await;
-        crate::raw::server_start(&mut server, s).await?;
-        crate::raw::client_start(&mut client, c).await?;
-        assert_eq!(Some("1"), version.as_deref());
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn chain() -> Result<()> {
-        let (mut client, mut server) = create().await?;
-        let c = crate::compress_encrypt::client_init(&mut client, &"a", &"1").await;
-        let s = crate::compress_encrypt::server_init(&mut server, &"a", |v| v == "1").await;
-        let s = crate::compress_encrypt::server_start(&mut server, s).await?;
-        let c = crate::compress_encrypt::client_start(&mut client, c).await?;
-
-        let mut message = Bytes::from("a").chain(Bytes::from("b")).chain(Bytes::from("c"));
-        crate::compress_encrypt::send(&mut client, &mut message, c, Compression::default()).await?;
-        let message = crate::compress_encrypt::recv(&mut server, s).await?.0;
-        assert_eq!(b"abc", message.as_ref());
-        Ok(())
-    }
-
-    macro_rules! test_incorrect {
-        ($protocol: ident) => {
-            #[tokio::test]
-            async fn incorrect() -> anyhow::Result<()> {
-                let (mut client, mut server) = create().await?;
-                crate::variable_len_reader::AsyncVariableWriter::write_string(&mut client, "Something incorrect.").await?;
-                let s = crate::$protocol::server_init(&mut server, &"a", |v| v == "1").await;
-                match crate::$protocol::server_start(&mut server, s).await {
-                    Ok(_) => assert!(false), Err(e) => match e {
-                        crate::common::StarterError::InvalidStream() => assert!(true),
-                        _ => assert!(false),
-                    }
-                }
-                Ok(())
-            }
-
-            #[tokio::test]
-            async fn identifier() -> Result<()> {
-                let (mut client, mut server) = create().await?;
-                let c = crate::$protocol::client_init(&mut client, &"a", &"1").await;
-                let s = crate::$protocol::server_init(&mut server, &"b", |v| v == "1").await;
-                match crate::$protocol::server_start(&mut server, s).await {
-                    Ok(_) => assert!(false), Err(e) => match e {
-                        crate::common::StarterError::ClientInvalidIdentifier(i) => assert_eq!("a", &i),
-                        _ => assert!(false),
-                    }
-                }
-                match crate::$protocol::client_start(&mut client, c).await {
-                    Ok(_) => assert!(false), Err(e) => match e {
-                        crate::common::StarterError::ServerInvalidIdentifier() => assert!(true),
-                        _ => assert!(false),
-                    }
-                }
-                Ok(())
-            }
-
-            #[tokio::test]
-            async fn version() -> Result<()> {
-                let (mut client, mut server) = create().await?;
-                let c = crate::$protocol::client_init(&mut client, &"a", &"1").await;
-                let s = crate::$protocol::server_init(&mut server, &"a", |v| v == "2").await;
-                match crate::$protocol::server_start(&mut server, s).await {
-                    Ok(_) => assert!(false), Err(e) => match e {
-                        crate::common::StarterError::ClientInvalidVersion(v) => assert_eq!("1", &v),
-                        _ => assert!(false),
-                    }
-                }
-                match crate::$protocol::client_start(&mut client, c).await {
-                    Ok(_) => assert!(false), Err(e) => match e {
-                        crate::common::StarterError::ServerInvalidVersion() => assert!(true),
-                        _ => assert!(false),
-                    }
-                }
-                Ok(())
-            }
-        };
-    }
-    pub(crate) use test_incorrect;
+    Ok(extra)
 }
