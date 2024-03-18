@@ -1,6 +1,6 @@
-//! Global configuration for this crate.
+//! Global configuration for this [crate].
 //!
-//! You may change the configuration by calling `set_config` function.
+//! You may change the configuration by calling [set_config] function.
 //!
 //! # Example
 //! ```rust
@@ -12,6 +12,7 @@
 //! ```
 
 use std::sync::RwLock;
+use once_cell::sync::Lazy;
 
 /// Global configuration.
 ///
@@ -25,10 +26,11 @@ use std::sync::RwLock;
 /// # }
 /// ```
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Config {
     /// `max_packet_size` is the maximum size of a packet in bytes.
     /// It is used to limit the size of a packet that can be received or sent.
+    ///
     /// Default value is `1 << 20`.
     ///
     /// # Example
@@ -38,26 +40,31 @@ pub struct Config {
     /// # fn main() {
     /// let config = Config {
     ///     max_packet_size: 1 << 10,
+    ///     ..Config::default()
     /// };
     /// # let _ = config;
     /// # }
     /// ```
     pub max_packet_size: usize,
+
+    #[cfg(feature = "compression")]
+    #[cfg_attr(docsrs, cfg(feature = "compression"))]
+    pub compression: flate2::Compression,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             max_packet_size: 1 << 20,
+            #[cfg(feature = "compression")]
+            compression: flate2::Compression::default(),
         }
     }
 }
 
-static CONFIG: RwLock<Config> = RwLock::new(Config {
-    max_packet_size: 1 << 20,
-});
+static CONFIG: Lazy<RwLock<Config>> = Lazy::new(|| RwLock::new(Config::default()));
 
-/// Sets the global configuration.
+/// Set the global configuration.
 ///
 /// This function is recommended to only be called once during initialization.
 ///
@@ -75,7 +82,7 @@ pub fn set_config(config: Config) {
     *c = config;
 }
 
-/// Gets the global configuration.
+/// Get the global configuration.
 ///
 /// # Example
 /// ```rust
@@ -102,6 +109,18 @@ pub fn get_max_packet_size() -> usize {
     (*c).max_packet_size
 }
 
+/// A cheaper shortcut of
+/// ```rust,ignore
+/// get_config().compression
+/// ```
+#[cfg(feature = "compression")]
+#[cfg_attr(docsrs, cfg(feature = "compression"))]
+#[inline]
+pub fn get_compression() -> flate2::Compression {
+    let c = CONFIG.read().unwrap();
+    (*c).compression
+}
+
 #[cfg(test)]
 mod test {
     use crate::config::{Config, get_max_packet_size, set_config};
@@ -113,15 +132,15 @@ mod test {
 
     #[test]
     fn set() {
-        set_config(Config { max_packet_size: 1 });
+        set_config(Config { max_packet_size: 1, ..Config::default() });
         assert_eq!(1, get_max_packet_size());
     }
 
     #[test]
     fn set_twice() {
-        set_config(Config { max_packet_size: 1 });
+        set_config(Config { max_packet_size: 1, ..Config::default() });
         assert_eq!(1, get_max_packet_size());
-        set_config(Config { max_packet_size: 2 });
+        set_config(Config { max_packet_size: 2, ..Config::default() });
         assert_eq!(2, get_max_packet_size());
     }
 }
