@@ -255,20 +255,20 @@ mod tests {
         client_start(&mut client, c).await?;
 
         let mut writer = BytesMut::new().writer();
-        writer.write_string("hello server.")?;
+        writer.write_string("hello server in raw.")?;
         send(&mut client, &mut writer.into_inner()).await?;
 
         let mut reader = recv(&mut server).await?.reader();
         let message = reader.read_string()?;
-        assert_eq!("hello server.", message);
+        assert_eq!("hello server in raw.", message);
 
         let mut writer = BytesMut::new().writer();
-        writer.write_string("hello client.")?;
+        writer.write_string("hello client in raw.")?;
         send(&mut server, &mut writer.into_inner()).await?;
 
         let mut reader = recv(&mut client).await?.reader();
         let message = reader.read_string()?;
-        assert_eq!("hello client.", message);
+        assert_eq!("hello client in raw.", message);
 
         Ok(())
     }

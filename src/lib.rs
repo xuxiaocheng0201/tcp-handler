@@ -7,9 +7,9 @@ pub mod config;
 pub mod common;
 
 pub mod raw;
-// #[cfg(feature = "compression")]
-// #[cfg_attr(docsrs, doc(cfg(feature = "compression")))]
-// pub mod compress;
+#[cfg(feature = "compression")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compression")))]
+pub mod compress;
 // #[cfg(feature = "encryption")]
 // #[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
 // pub mod encrypt;
