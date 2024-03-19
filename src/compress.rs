@@ -1,6 +1,7 @@
 //! Compression protocol. Without encryption.
 //!
 //! With compression, you can reduce the size of the data sent by the server and the client.
+//!
 //! Set the compression level by calling [tcp_handler::config::set_config].
 //!
 //! # Example
@@ -60,6 +61,7 @@
 use bytes::{Buf, BufMut, BytesMut};
 use flate2::write::{DeflateDecoder, DeflateEncoder};
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::task::block_in_place;
 use variable_len_reader::synchronous::VariableWritable;
 use crate::common::*;
 use crate::config::get_compression;
@@ -188,6 +190,10 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
 
 /// Send the message in compress tcp-handler protocol.
 ///
+/// # Runtime
+/// Due to call [tokio::task::block_in_place] internally,
+/// this function cannot be called in a `current_thread` runtime.
+///
 /// # Arguments
 ///  * `stream` - The tcp stream or `WriteHalf`.
 ///  * `message` - The message to send.
@@ -214,9 +220,11 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
 /// ```
 pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B) -> Result<(), PacketError> {
     let level = get_compression();
-    let mut encoder = DeflateEncoder::new(BytesMut::new().writer(), level);
-    encoder.write_more_buf(message)?;
-    let mut bytes = encoder.finish()?.into_inner();
+    let mut bytes = block_in_place(move || {
+        let mut encoder = DeflateEncoder::new(BytesMut::new().writer(), level);
+        encoder.write_more_buf(message)?;
+        Ok::<_, PacketError>(encoder.finish()?.into_inner())
+    })?;
     write_packet(stream, &mut bytes).await
 }
 
@@ -245,22 +253,23 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 /// #     Ok(())
 /// # }
 /// ```
-pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R) -> Result<impl Buf, PacketError> {
+pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R) -> Result<impl Buf + Send + Unpin, PacketError> {
     let mut bytes = read_packet(stream).await?;
     let mut decoder = DeflateDecoder::new(BytesMut::new().writer());
     decoder.write_more_buf(&mut bytes)?;
-    Ok(decoder.finish()?.into_inner())
+    let message = decoder.finish()?.into_inner();
+    Ok(message)
 }
 
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use bytes::{Buf, BufMut, BytesMut};
+    use bytes::Buf;
     use variable_len_reader::{VariableReader, VariableWriter};
     use crate::common::tests::create;
     use crate::compress::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn connect() -> Result<()> {
         let (mut client, mut server) = create().await?;
         let c = client_init(&mut client, "a", "1").await;

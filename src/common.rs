@@ -262,7 +262,7 @@ pub(crate) async fn write_packet<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, 
 }
 
 /// See [write_packet].
-pub(crate) async fn read_packet<R: AsyncRead + Unpin>(stream: &mut R) -> Result<impl Buf, PacketError> {
+pub(crate) async fn read_packet<R: AsyncRead + Unpin>(stream: &mut R) -> Result<impl Buf + Send + Unpin, PacketError> {
     let len = stream.read_usize_varint_ap().await?;
     check_bytes_len(len)?;
     let mut buf = OwnedReadBuf::new(vec![0; len]);
