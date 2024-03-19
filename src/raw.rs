@@ -16,9 +16,9 @@
 //!     let mut client = TcpStream::connect(server.local_addr()?).await?;
 //!     let (mut server, _) = server.accept().await?;
 //!
-//!     let c_init = client_init(&mut client, &"test", &"0").await;
-//!     let s_init = server_init(&mut server, &"test", |v| v == "0").await;
-//!     server_start(&mut server, s_init).await?;
+//!     let c_init = client_init(&mut client, "test", "0").await;
+//!     let s_init = server_init(&mut server, "test", |v| v == "0").await;
+//!     server_start(&mut server, "test", "0", s_init).await?;
 //!     client_start(&mut client, c_init).await?;
 //!
 //!     let mut writer = BytesMut::new().writer();
@@ -41,23 +41,23 @@
 //! }
 //! ```
 //!
-//! This protocol is like this:
+//! This process is like this:
 //! ```text
 //!         ┌────┬────────┬────────────┐ (It may not be in contiguous memory.)
 //! in  --> │ ** │ ****** │ ********** │
 //!         └────┴────────┴────────────┘
 //!           │
-//!           │─ Directly send
+//!           │─ Directly send packet
 //! out <--  ─┘
 //! ```
 
-use bytes::{Buf, BytesMut};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::common::{PacketError, read_head, read_last, read_packet, StarterError, write_head, write_last, write_packet};
+use bytes::Buf;
+use tokio::io::{AsyncRead, AsyncWrite};
+use crate::common::*;
 
 /// Init the client side in tcp-handler raw protocol.
 ///
-/// Must be used in conjunction with `tcp_handler::raw::client_start`.
+/// Must be used in conjunction with [client_start].
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `WriteHalf`.
@@ -73,21 +73,20 @@ use crate::common::{PacketError, read_head, read_last, read_packet, StarterError
 /// #[tokio::main]
 /// async fn main() -> Result<()> {
 ///     let mut client = TcpStream::connect("localhost:25564").await?;
-///     let c_init = client_init(&mut client, &"test", &"0").await;
+///     let c_init = client_init(&mut client, "test", "0").await;
 ///     client_start(&mut client, c_init).await?;
 ///     // Now the client is ready to use.
 ///     Ok(())
 /// }
 /// ```
-pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identifier: &str, version: &str) -> Result<(), StarterError> {
-    let writer = write_head(stream, identifier, version, false, false).await?;
-    write_packet(stream, &mut writer.into_inner()).await?;
-    Ok(())
+#[inline]
+pub async fn client_init<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str, version: &str) -> Result<(), StarterError> {
+    write_head(stream, ProtocolVariant::Raw, identifier, version).await
 }
 
 /// Init the server side in tcp-handler raw protocol.
 ///
-/// Must be used in conjunction with `tcp_handler::raw::server_start`.
+/// Must be used in conjunction with [server_start].
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `ReadHalf`.
@@ -104,78 +103,24 @@ pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identi
 /// async fn main() -> Result<()> {
 ///     let server = TcpListener::bind("localhost:25564").await?;
 ///     let (mut server, _) = server.accept().await?;
-///     let s_init = server_init(&mut server, &"test", |v| v == "0").await;
-///     server_start(&mut server, s_init).await?;
+///     let s_init = server_init(&mut server, "test", |v| v == "0").await;
+///     server_start(&mut server, "test", "0", s_init).await?;
 ///     // Now the server is ready to use.
 ///     Ok(())
 /// }
 /// ```
-///
-/// You can get the client version from this function:
-/// ```rust,no_run
-/// use anyhow::Result;
-/// use tcp_handler::raw::{server_init, server_start};
-/// use tokio::net::TcpListener;
-///
-/// #[tokio::main]
-/// async fn main() -> Result<()> {
-///     let server = TcpListener::bind("localhost:25564").await?;
-///     let (mut server, _) = server.accept().await?;
-///     let mut version = None;
-///     let s_init = server_init(&mut server, &"test", |v| {
-///         version = Some(v.to_string());
-///         v == "0"
-///     }).await;
-///     server_start(&mut server, s_init).await?;
-///     let version = version.unwrap();
-///     // Now the version is got.
-///     let _ = version;
-///     Ok(())
-/// }
-/// ```
-pub async fn server_init<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) -> bool>(stream: &mut R, identifier: &str, version: P) -> Result<(), StarterError> {
-    read_head(stream, identifier, version, false, false).await?;
-    Ok(())
-}
-
-/// Make sure the server side is ready to use in tcp-handler raw protocol.
-///
-/// Must be used in conjunction with `tcp_handler::raw::server_init`.
-///
-/// # Arguments
-///  * `stream` - The tcp stream or `WriteHalf`.
-///  * `last` - The return value of `tcp_handler::raw::server_init`.
-///
-/// # Example
-/// ```rust,no_run
-/// use anyhow::Result;
-/// use tcp_handler::raw::{server_init, server_start};
-/// use tokio::net::TcpListener;
-///
-/// #[tokio::main]
-/// async fn main() -> Result<()> {
-///     let server = TcpListener::bind("localhost:25564").await?;
-///     let (mut server, _) = server.accept().await?;
-///     let s_init = server_init(&mut server, &"test", |v| v == "0").await;
-///     server_start(&mut server, s_init).await?;
-///     // Now the server is ready to use.
-///     Ok(())
-/// }
-/// ```
-pub async fn server_start<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, last: Result<(), StarterError>) -> Result<(), StarterError> {
-    write_last(stream, last).await?;
-    #[cfg(feature = "auto_flush")]
-    stream.flush().await?;
-    Ok(())
+#[inline]
+pub async fn server_init<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(stream: &mut R, identifier: &str, version: P) -> Result<(u16, String), StarterError> {
+    read_head(stream, ProtocolVariant::Raw, identifier, version).await
 }
 
 /// Make sure the client side is ready to use in tcp-handler raw protocol.
 ///
-/// Must be used in conjunction with `tcp_handler::raw::client_init`.
+/// Must be used in conjunction with [client_init].
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `ReadHalf`.
-///  * `last` - The return value of `tcp_handler::raw::client_init`.
+///  * `last` - The return value of [client_init].
 ///
 /// # Example
 /// ```rust,no_run
@@ -186,22 +131,53 @@ pub async fn server_start<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, last:
 /// #[tokio::main]
 /// async fn main() -> Result<()> {
 ///     let mut client = TcpStream::connect("localhost:25564").await?;
-///     let c_init = client_init(&mut client, &"test", &"0").await;
+///     let c_init = client_init(&mut client, "test", "0").await;
 ///     client_start(&mut client, c_init).await?;
 ///     // Now the client is ready to use.
 ///     Ok(())
 /// }
 /// ```
-pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: Result<(), StarterError>) -> Result<(), StarterError> {
+#[inline]
+pub async fn client_start<R: AsyncRead + Unpin>(stream: &mut R, last: Result<(), StarterError>) -> Result<(), StarterError> {
     read_last(stream, last).await
 }
 
-/// Send message in raw tcp-handler protocol.
+/// Make sure the server side is ready to use in tcp-handler raw protocol.
 ///
-/// You may use some crate to read and write data,
-/// such as [`serde`](https://crates.io/crates/serde),
-/// [`postcard`](https://crates.io/crates/postcard) and
-/// [`variable-len-reader`](https://crates.io/crates/variable-len-reader).
+/// Must be used in conjunction with [server_init].
+///
+/// # Arguments
+///  * `stream` - The tcp stream or `WriteHalf`.
+///  * `identifier` - The returned application identifier.
+/// (Should be same with the para in [server_init].)
+///  * `version` - The returned recommended application version.
+/// (Should be passed the prediction in [server_init].)
+///  * `last` - The return value of [server_init].
+///
+/// # Example
+/// ```rust,no_run
+/// use anyhow::Result;
+/// use tcp_handler::raw::{server_init, server_start};
+/// use tokio::net::TcpListener;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<()> {
+///     let server = TcpListener::bind("localhost:25564").await?;
+///     let (mut server, _) = server.accept().await?;
+///     let s_init = server_init(&mut server, "test", |v| v == "0").await;
+///     let (procotol_version, client_version) = server_start(&mut server, "test", "0", s_init).await?;
+///     // Now the server is ready to use.
+///     # let _ = procotol_version;
+///     # let _ = client_version;
+///     Ok(())
+/// }
+/// ```
+#[inline]
+pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str, version: &str, last: Result<(u16, String), StarterError>) -> Result<(u16, String), StarterError> {
+    write_last(stream, ProtocolVariant::Raw, identifier, version, last).await
+}
+
+/// Send the message in raw tcp-handler protocol.
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `WriteHalf`.
@@ -209,80 +185,74 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 ///
 /// # Example
 /// ```rust,no_run
-/// use anyhow::Result;
-/// use bytes::{BufMut, BytesMut};
-/// use tcp_handler::raw::{client_init, client_start, send};
-/// use tokio::net::TcpStream;
-/// use variable_len_reader::VariableWriter;
+/// # use anyhow::Result;
+/// # use bytes::{BufMut, BytesMut};
+/// # use tcp_handler::raw::{client_init, client_start};
+/// use tcp_handler::raw::send;
+/// # use tokio::net::TcpStream;
+/// # use variable_len_reader::VariableWriter;
 ///
-/// #[tokio::main]
-/// async fn main() -> Result<()> {
-///     let mut client = TcpStream::connect("localhost:25564").await?;
-///     let c_init = client_init(&mut client, &"test", &"0").await;
-///     client_start(&mut client, c_init).await?;
-///
-///     let mut writer = BytesMut::new().writer();
-///     writer.write_string("hello server.")?;
-///     send(&mut client, &mut writer.into_inner()).await?;
-///     Ok(())
-/// }
+/// # #[tokio::main]
+/// # async fn main() -> Result<()> {
+/// #     let mut client = TcpStream::connect("localhost:25564").await?;
+/// #     let c_init = client_init(&mut client, "test", "0").await;
+/// #     client_start(&mut client, c_init).await?;
+/// let mut buffer = BytesMut::new().writer();
+/// buffer.write_string("hello server!")?;
+/// send(&mut client, &mut buffer.into_inner()).await?;
+/// #     Ok(())
+/// # }
 /// ```
 #[inline]
-pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf + Send>(stream: &mut W, message: &mut B) -> Result<(), PacketError> {
+pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B) -> Result<(), PacketError> {
     write_packet(stream, message).await
 }
 
-/// Recv message in raw tcp-handler protocol.
-///
-/// You may use some crate to read and write data,
-/// such as [`serde`](https://crates.io/crates/serde),
-/// [`postcard`](https://crates.io/crates/postcard) and
-/// [`variable-len-reader`](https://crates.io/crates/variable-len-reader).
+/// Recv the message in raw tcp-handler protocol.
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `ReadHalf`.
 ///
 /// # Example
 /// ```rust,no_run
-/// use anyhow::Result;
-/// use bytes::Buf;
-/// use tcp_handler::raw::{recv, server_init, server_start};
-/// use tokio::net::TcpListener;
-/// use variable_len_reader::VariableReader;
+/// # use anyhow::Result;
+/// # use bytes::Buf;
+/// # use tcp_handler::raw::{server_init, server_start};
+/// use tcp_handler::raw::recv;
+/// # use tokio::net::TcpListener;
+/// # use variable_len_reader::VariableReader;
 ///
-/// #[tokio::main]
-/// async fn main() -> Result<()> {
-///     let server = TcpListener::bind("localhost:25564").await?;
-///     let (mut server, _) = server.accept().await?;
-///     let s_init = server_init(&mut server, &"test", |v| v == "0").await;
-///     server_start(&mut server, s_init).await?;
-///
-///     let mut reader = recv(&mut server).await?.reader();
-///     let _message = reader.read_string()?;
-///     Ok(())
-/// }
+/// # #[tokio::main]
+/// # async fn main() -> Result<()> {
+/// #     let server = TcpListener::bind("localhost:25564").await?;
+/// #     let (mut server, _) = server.accept().await?;
+/// #     let s_init = server_init(&mut server, "test", |v| v == "0").await;
+/// #     server_start(&mut server, "test", "0", s_init).await?;
+/// let mut reader = recv(&mut server).await?.reader();
+/// let message = reader.read_string()?;
+/// #     Ok(())
+/// # }
 /// ```
 #[inline]
-pub async fn recv<R: AsyncReadExt + Unpin + Send>(stream: &mut R) -> Result<BytesMut, PacketError> {
+pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R) -> Result<impl Buf, PacketError> {
     read_packet(stream).await
 }
 
-
 #[cfg(test)]
-mod test {
+mod tests {
     use anyhow::Result;
     use bytes::{Buf, BufMut, BytesMut};
     use variable_len_reader::{VariableReader, VariableWriter};
-    use crate::raw::{recv, send};
-    use crate::common::test::{create, test_incorrect};
+    use crate::common::tests::create;
+    use crate::raw::*;
 
     #[tokio::test]
     async fn connect() -> Result<()> {
         let (mut client, mut server) = create().await?;
-        let c = crate::raw::client_init(&mut client, &"a", &"1").await;
-        let s = crate::raw::server_init(&mut server, &"a", |v| v == "1").await;
-        crate::raw::server_start(&mut server, s).await?;
-        crate::raw::client_start(&mut client, c).await?;
+        let c = client_init(&mut client, "a", "1").await;
+        let s = server_init(&mut server, "a", |v| v == "1").await;
+        server_start(&mut server, "a", "1", s).await?;
+        client_start(&mut client, c).await?;
 
         let mut writer = BytesMut::new().writer();
         writer.write_string("hello server.")?;
@@ -302,6 +272,4 @@ mod test {
 
         Ok(())
     }
-
-    test_incorrect!(raw);
 }

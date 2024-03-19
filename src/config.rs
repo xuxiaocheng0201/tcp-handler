@@ -47,6 +47,21 @@ pub struct Config {
     /// ```
     pub max_packet_size: usize,
 
+    /// `compression` is the [flate2::Compression] level when sending packets.
+    ///
+    /// # Example
+    /// ```rust
+    /// use tcp_handler::config::Config;
+    /// use tcp_handler::Compression;
+    ///
+    /// # fn main() {
+    /// let config = Config {
+    ///     compression: Compression::fast(),
+    ///     ..Config::default()
+    /// };
+    /// # let _ = config;
+    /// # }
+    /// ```
     #[cfg(feature = "compression")]
     #[cfg_attr(docsrs, cfg(feature = "compression"))]
     pub compression: flate2::Compression,

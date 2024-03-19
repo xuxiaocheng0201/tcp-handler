@@ -770,6 +770,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61285f6515fa018fb2d1e46eb21223fff441ee8db5d0f1435e8ab4f5cdb80931"
 dependencies = [
  "backtrace",
+ "bytes",
  "libc",
  "mio",
  "num_cpus",
@@ -864,9 +865,9 @@ dependencies = [
 
 [[package]]
 name = "variable-len-reader"
-version = "3.1.0"
+version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcca405ec1a6c72c098d0b8353e55128ebb3f7c0b96f974c428a6a7b4e566990"
+checksum = "58aa248fd3fec45adb890e8b61ab782e8a055ce45b6c7e3d3e7c486d11c64542"
 dependencies = [
  "bytes",
  "pin-project-lite",

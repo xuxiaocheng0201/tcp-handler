@@ -12,6 +12,11 @@
 
 更便捷地使用`tokio::net::TcpStream`传输`bytes::Bytes`数据块。
 
+你需要一些额外的库来读写数据，比如
+[serde](https://crates.io/crates/serde)，
+[postcard](https://crates.io/crates/postcard) 或者
+[variable-len-reader](https://crates.io/crates/variable-len-reader)。
+
 如果需要更方便地构建你的TCP应用，请参考
 [tcp-server](https://crates.io/crates/tcp-server) 和 [tcp-client](https://crates.io/crates/tcp-client)。
 
@@ -68,8 +73,8 @@ async fn main() -> Result<()> {
     let (mut server, _) = server.accept().await?;
     
     // 准备 tcp-handler 协议
-    let client_init = client_init(&mut client, &"test", &"0.0.0").await;
-    let server_init = server_init(&mut server, &"test", |v| v == "0.0.0").await;
+    let client_init = client_init(&mut client, "test", "0.0.0").await;
+    let server_init = server_init(&mut server, "test", |v| v == "0.0.0").await;
     server_start(&mut server, server_init).await?;
     client_start(&mut client, client_init).await?;
     
@@ -104,8 +109,8 @@ async fn main() -> Result<()> {
     let (mut server, _) = server.accept().await?;
     
     // 准备 tcp-handler 协议，并协商密钥
-    let client_init = client_init(&mut client, &"test", &"0.0.0").await;
-    let server_init = server_init(&mut server, &"test", |v| v == "0.0.0").await;
+    let client_init = client_init(&mut client, "test", "0.0.0").await;
+    let server_init = server_init(&mut server, "test", |v| v == "0.0.0").await;
     let server_cipher = server_start(&mut server, server_init).await?;
     let client_cipher = client_start(&mut client, client_init).await?;
     
@@ -149,8 +154,8 @@ async fn main() -> Result<()> {
     let server = TcpListener::bind("localhost:0").await?;
     let mut client = TcpStream::connect(server.local_addr()?).await?;
     let (mut server, _) = server.accept().await?;
-    let client_init = client_init(&mut client, &"chain", &"0").await;
-    let server_init = server_init(&mut server, &"chain", |v| v == "0").await;
+    let client_init = client_init(&mut client, "chain", "0").await;
+    let server_init = server_init(&mut server, "chain", |v| v == "0").await;
     server_start(&mut server, server_init).await?;
     client_start(&mut client, client_init).await?;
 

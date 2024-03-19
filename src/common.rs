@@ -1,12 +1,15 @@
 //! Common utilities for this crate.
 
-use std::io::{Cursor, Error, Read, Write};
+use std::io::{Cursor, Error};
 use bytes::Buf;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWrite};
+use variable_len_reader::{AsyncVariableReader, AsyncVariableWriter};
+use variable_len_reader::asynchronous::{AsyncVariableReadable, AsyncVariableWritable};
+use variable_len_reader::util::read_buf::OwnedReadBuf;
 use crate::config::get_max_packet_size;
 
-/// Error in send/recv message.
+/// Error when send/recv packets.
 #[derive(Error, Debug)]
 pub enum PacketError {
     /// The packet size is larger than the maximum allowed packet size.
@@ -38,7 +41,7 @@ pub enum PacketError {
     Broken(),
 }
 
-/// Error in init/start protocol.
+/// Error when init/start protocol.
 #[derive(Error, Debug)]
 pub enum StarterError {
     /// [MAGIC_BYTES] isn't matched. Or the [MAGIC_VERSION] is no longer supported.
@@ -47,50 +50,27 @@ pub enum StarterError {
     InvalidStream(),
 
     /// Incompatible tcp-handler protocol.
+    /// The param came from the other side.
     /// Please check whether you use the same protocol between client and server.
-    /// This error will be thrown in **server** side.
     #[error("Incompatible protocol. received protocol: {0:?}")]
-    ClientInvalidProtocol(ProtocolVariant),
+    InvalidProtocol(ProtocolVariant),
 
     /// Invalid application identifier.
+    /// The param came from the other side.
     /// Please confirm that you are connected to the correct application,
     /// or that there are no spelling errors in the server and client identifiers.
-    /// This error will be thrown in **server** side.
     #[error("Invalid identifier. received: {0}")]
-    ClientInvalidIdentifier(String),
+    InvalidIdentifier(String),
 
     /// Invalid application version.
+    /// The param came from the other side.
     /// This is usually caused by the low version of the client application.
-    /// This error will be thrown in **server** side.
     #[error("Invalid version. received: {0}")]
-    ClientInvalidVersion(String),
-
-    /// Incompatible tcp-handler protocol.
-    /// Please check whether you use the same protocol between client and server.
-    /// This error will be thrown in **client** side.
-    #[error("Incompatible protocol.")]
-    ServerInvalidProtocol(),
-
-    /// Invalid application identifier.
-    /// Please confirm that you are connected to the correct application,
-    /// or that there are no spelling errors in the server and client identifiers.
-    /// This error will be thrown in **client** side.
-    #[error("Invalid identifier.")]
-    ServerInvalidIdentifier(),
-
-    /// Invalid application version.
-    /// This is usually caused by the low version of the client application.
-    /// This error will be thrown in **client** side.
-    #[error("Invalid version.")]
-    ServerInvalidVersion(),
+    InvalidVersion(String),
 
     /// During io bytes.
     #[error("During io bytes.")]
     IO(#[from] Error),
-
-    /// During reading/writing packet.
-    #[error("During reading/writing packet.")]
-    Packet(#[from] PacketError),
 
     /// During generating/encrypting/decrypting rsa key.
     #[cfg(feature = "encryption")]
@@ -105,20 +85,6 @@ pub enum StarterError {
     AES(#[from] aes_gcm::aes::cipher::InvalidLength),
 }
 
-impl TryFrom<StarterError> for Error {
-    type Error = StarterError;
-
-    fn try_from(value: StarterError) -> Result<Self, Self::Error> {
-        if let StarterError::IO(e) = value {
-            return Ok(e);
-        }
-        if let StarterError::Packet(PacketError::IO(e)) = value {
-            return Ok(e);
-        }
-        Err(value)
-    }
-}
-
 
 /// The MAGIC is generated in j-shell environment:
 /// ```java
@@ -131,39 +97,31 @@ static MAGIC_BYTES: [u8; 4] = [208, 8, 166, 104];
 /// The version of the tcp-handler protocol.
 ///
 /// | version code | crate version |
-/// | ------------ | ------------  |
-/// | 0            | <=0.5.2       |
-static MAGIC_VERSION: u16 = 0;
+/// | ------------ | ------------- |
+/// | 1            | >=0.6.0       |
+/// | 0            | <0.6.0        |
+static MAGIC_VERSION: u16 = 1;
 
 /// The variants of the protocol.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum ProtocolVariant {
     /// See [crate::raw].
     Raw,
     /// See [crate::compress].
-    #[cfg(feature = "compression")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "compression")))]
     Compression,
     /// See [crate::encrypt].
-    #[cfg(feature = "encryption")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
     Encryption,
     /// See [crate::compress_encrypt].
-    #[cfg(feature = "compression_encrypt")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "compression_encrypt")))]
     CompressEncryption,
 }
 
 impl From<[bool; 2]> for ProtocolVariant {
     fn from(value: [bool; 2]) -> Self {
         match value {
-            [true, false] => ProtocolVariant::Raw,
-            #[cfg(feature = "compression")]
+            [false, false] => ProtocolVariant::Raw,
             [false, true] => ProtocolVariant::Compression,
-            #[cfg(feature = "encryption")]
             [true, false] => ProtocolVariant::Encryption,
-            #[cfg(feature = "compression_encrypt")]
             [true, true] => ProtocolVariant::CompressEncryption,
         }
     }
@@ -172,54 +130,114 @@ impl From<[bool; 2]> for ProtocolVariant {
 impl From<ProtocolVariant> for [bool; 2] {
     fn from(value: ProtocolVariant) -> Self {
         match value {
-            ProtocolVariant::Raw => [true, false],
-            #[cfg(feature = "compression")]
+            ProtocolVariant::Raw => [false, false],
             ProtocolVariant::Compression => [false, true],
-            #[cfg(feature = "encryption")]
             ProtocolVariant::Encryption => [true, false],
-            #[cfg(feature = "compression_encrypt")]
             ProtocolVariant::CompressEncryption => [true, true],
         }
     }
 }
 
-/// ```text
-///   ┌─ Magic bytes
-///   │     ┌─ Magic version
-///   │     │   ┌─ Protocol variant
-///   v     v   v
-/// ┌─────┬────┬────┐
-/// │ *** │ ** │ ** │
-/// └─────┴────┴────┘
-/// ```
 #[inline]
-pub(crate) async fn write_head<W: AsyncWrite + Unpin>(stream: &mut W, protocol: ProtocolVariant) -> Result<(), StarterError> {
-    use variable_len_reader::asynchronous::writer::AsyncVariableWriter;
-    stream.write_more(&MAGIC_BYTES).await?;
-    stream.write_u16_raw_be(MAGIC_VERSION).await?;
-    stream.write_bools_2(protocol.into()).await?;
+async fn write_string<W: AsyncWrite + Unpin>(stream: &mut W, string: &str) -> Result<(), <W as AsyncVariableWritable>::Error> {
+    stream.write_usize_varint_ap(string.len()).await?;
+    stream.write_more(string.as_bytes()).await?;
     Ok(())
 }
 
-/// See [write_head].
 #[inline]
-pub(crate) async fn read_head<R: AsyncRead + Unpin>(stream: &mut R, protocol: ProtocolVariant) -> Result<u16, StarterError> {
-    use variable_len_reader::asynchronous::reader::AsyncVariableReader;
+async fn read_string<R: AsyncRead + Unpin>(stream: &mut R) -> Result<String, <R as AsyncVariableReadable>::Error> {
+    let len = stream.read_usize_varint_ap().await?;
+    let mut buf = vec![0; len];
+    stream.read_more(&mut buf).await?;
+    String::from_utf8(buf).map_err(|e| R::read_string_error("ReadString", e))
+}
+
+/// In client side.
+/// ```text
+///   ┌─ Magic bytes
+///   │     ┌─ Magic version
+///   │     │    ┌─ Protocol variant
+///   │     │    │    ┌─ Application identifier
+///   │     │    │    │       ┌─ Application version
+///   v     v    v    v       v
+/// ┌─────┬────┬────┬───────┬───────┐
+/// │ *** │ ** │ ** │ ***** │ ***** │
+/// └─────┴────┴────┴───────┴───────┘
+/// ```
+pub(crate) async fn write_head<W: AsyncWrite + Unpin>(stream: &mut W, protocol: ProtocolVariant, identifier: &str, version: &str) -> Result<(), StarterError> {
+    stream.write_more(&MAGIC_BYTES).await?;
+    stream.write_u16_raw_be(MAGIC_VERSION).await?;
+    stream.write_bools_2(protocol.into()).await?;
+    write_string(stream, identifier).await?;
+    write_string(stream, version).await?;
+    Ok(())
+}
+
+/// In server side.
+/// See [write_head].
+pub(crate) async fn read_head<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(stream: &mut R, protocol: ProtocolVariant, identifier: &str, version: P) -> Result<(u16, String), StarterError> {
     let mut magic = [0; 4];
     stream.read_more(&mut magic).await?;
     if magic != MAGIC_BYTES { return Err(StarterError::InvalidStream()); }
-    let version = stream.read_u16_raw_be().await?;
-    if version != MAGIC_VERSION { return Err(StarterError::InvalidStream()); }
+    let protocol_version = stream.read_u16_raw_be().await?;
+    if protocol_version != MAGIC_VERSION { return Err(StarterError::InvalidStream()); }
     let protocol_read = stream.read_bools_2().await?.into();
-    if protocol_read != protocol { return Err(StarterError::ClientInvalidProtocol(protocol_read)); }
-    Ok(version)
+    if protocol_read != protocol { return Err(StarterError::InvalidProtocol(protocol_read)); }
+    let identifier_read = read_string(stream).await?;
+    if identifier_read != identifier { return Err(StarterError::InvalidIdentifier(identifier_read)); }
+    let version_read = read_string(stream).await?;
+    if !version(&version_read) { return Err(StarterError::InvalidVersion(version_read)); }
+    Ok((protocol_version, version_read))
 }
 
+/// In server side.
+/// ```text
+///   ┌─ State bytes
+///   │   ┌─ Error information.
+///   v   v
+/// ┌───┬───────┐
+/// │ * │ ***** │
+/// └───┴───────┘
+/// ```
+pub(crate) async fn write_last<W: AsyncWrite + Unpin, E>(stream: &mut W, protocol: ProtocolVariant, identifier: &str, version: &str, last: Result<E, StarterError>) -> Result<E, StarterError> {
+    match last {
+        Err(e) => {
+            match &e {
+                StarterError::InvalidProtocol(_) => {
+                    stream.write_bools_2([false, false]).await?;
+                    stream.write_bools_2(protocol.into()).await?;
+                }
+                StarterError::InvalidIdentifier(_) => {
+                    stream.write_bools_2([false, true]).await?;
+                    write_string(stream, identifier).await?;
+                }
+                StarterError::InvalidVersion(_) => {
+                    stream.write_bools_2([true, false]).await?;
+                    write_string(stream, version).await?;
+                }
+                _ => {}
+            }
+            return Err(e);
+        },
+        Ok(k) => {
+            stream.write_bools_2([true, true]).await?;
+            Ok(k)
+        }
+    }
+}
 
-/// The cipher in encryption mode.
-/// You **must** update this value after each call to the send/recv function.
-#[cfg(feature = "encryption")]
-pub(crate) type InnerAesCipher = (aes_gcm::Aes256Gcm, aes_gcm::Nonce<aes_gcm::aead::consts::U12>);
+/// In client side.
+/// See [write_last].
+pub(crate) async fn read_last<R: AsyncRead + Unpin, E>(stream: &mut R, last: Result<E, StarterError>) -> Result<E, StarterError> {
+    let extra = last?;
+    match stream.read_bools_2().await? {
+        [true, true] => Ok(extra),
+        [false, false] => Err(StarterError::InvalidProtocol(stream.read_bools_2().await?.into())),
+        [false, true] => Err(StarterError::InvalidIdentifier(read_string(stream).await?)),
+        [true, false] => Err(StarterError::InvalidVersion(read_string(stream).await?)),
+    }
+}
 
 
 #[inline]
@@ -237,7 +255,6 @@ fn check_bytes_len(len: usize) -> Result<(), PacketError> {
 /// └────┴────────┘
 /// ```
 pub(crate) async fn write_packet<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, bytes: &mut B) -> Result<(), PacketError> {
-    use variable_len_reader::asynchronous::writer::AsyncVariableWriter;
     check_bytes_len(bytes.remaining())?;
     stream.write_usize_varint_ap(bytes.remaining()).await?;
     stream.write_more_buf(bytes).await?;
@@ -246,14 +263,19 @@ pub(crate) async fn write_packet<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, 
 
 /// See [write_packet].
 pub(crate) async fn read_packet<R: AsyncRead + Unpin>(stream: &mut R) -> Result<impl Buf, PacketError> {
-    use variable_len_reader::asynchronous::reader::AsyncVariableReader;
     let len = stream.read_usize_varint_ap().await?;
     check_bytes_len(len)?;
-    let mut buf = vec![0; len];
+    let mut buf = OwnedReadBuf::new(vec![0; len]);
     stream.read_more_buf(&mut buf).await?;
-    Ok(Cursor::new(buf))
+    let buf = Cursor::new(buf.into_inner());
+    Ok(buf)
 }
 
+
+/// The cipher in encryption mode.
+/// You **must** update this value after each call to the send/recv function.
+#[cfg(feature = "encryption")]
+pub(crate) type InnerAesCipher = (aes_gcm::Aes256Gcm, aes_gcm::Nonce<aes_gcm::aead::consts::U12>);
 
 /// The cipher in encryption mode.
 #[cfg(feature = "encryption")]
@@ -266,9 +288,9 @@ pub struct Cipher {
 impl std::fmt::Debug for Cipher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Cipher")
-            .field("cipher", self.cipher.try_lock()
-                .map_or_else(|_| &"<locked>",
-                             |inner| if (*inner).is_some() { &"<unlocked>" } else { &"<broken>" }))
+            .field("cipher", &self.cipher.try_lock()
+                .map_or_else(|_| "<locked>",
+                             |inner| if (*inner).is_some() { "<unlocked>" } else { "<broken>" }))
             .finish()
     }
 }
@@ -294,67 +316,27 @@ impl Cipher {
 }
 
 
-/// ```text
-///   ┌─ Application identifier
-///   │       ┌─ Application version
-///   v       v
-/// ┌───────┬───────┐
-/// │ ***** │ ***** │
-/// └───────┴───────┘
-#[inline]
-pub(crate) fn write_application<W: Write>(buffer: &mut W, identifier: &str, version: &str) -> Result<(), StarterError> {
-    use variable_len_reader::synchronous::writer::VariableWriter;
-    buffer.write_string(identifier)?;
-    buffer.write_string(version)?;
-    Ok(())
-}
+#[cfg(test)]
+pub(crate) mod tests {
+    use anyhow::Result;
+    use bytes::{Buf, Bytes};
+    use tokio::io::{AsyncRead, AsyncWrite, duplex};
+    use crate::common::{read_packet, write_packet};
 
-/// See [write_application].
-#[inline]
-pub(crate) fn read_application<R: Read, P: FnOnce(&str) -> bool>(buffer: &mut R, identifier: &str, version: P) -> Result<String, StarterError> {
-    use variable_len_reader::synchronous::reader::VariableReader;
-    let identifier_read = buffer.read_string()?;
-    if identifier_read != identifier { return Err(StarterError::ClientInvalidIdentifier(identifier_read)); }
-    let version_read = buffer.read_string()?;
-    if !version(&version_read) { return Err(StarterError::ClientInvalidVersion(version_read)); }
-    Ok(version_read)
-}
-
-
-/// ```text
-///   ┌─ State bytes
-///   v
-/// ┌─────┐
-/// │ *** │
-/// └─────┘
-/// ```
-#[inline]
-pub(crate) fn write_last<W: Write, E>(buffer: &mut W, last: Result<E, StarterError>) -> Result<E, StarterError> {
-    use variable_len_reader::synchronous::writer::VariableWriter;
-    match last {
-        Err(e) => {
-            match e { // FIXME: report the current protocol and update the protocol version.
-                StarterError::ClientInvalidProtocol(_) => { buffer.write_bools_3([false, false, false])?; }
-                StarterError::ClientInvalidIdentifier(_) => { buffer.write_bools_3([true, false, false])?; }
-                StarterError::ClientInvalidVersion(_) => { buffer.write_bools_3([true, true, false])?; }
-                _ => {}
-            }
-            return Err(e);
-        }
-        Ok(k) => {
-            buffer.write_bools_3([true, true, true])?;
-            Ok(k)
-        }
+    pub(crate) async fn create() -> Result<(impl AsyncRead + AsyncWrite + Unpin, impl AsyncRead + AsyncWrite + Unpin)> {
+        let (client, server) = duplex(1024);
+        Ok((client, server))
     }
-}
 
-#[inline]
-pub(crate) fn read_last<R: Read, E>(buffer: &mut R, last: Result<E, StarterError>) -> Result<E, StarterError> {
-    use variable_len_reader::synchronous::reader::VariableReader;
-    let extra = last?;
-    let [state, identifier, version] = buffer.read_bools_3()?;
-    if !state { return Err(StarterError::ServerInvalidProtocol()) }
-    if !identifier { return Err(StarterError::ServerInvalidIdentifier()) }
-    if !version { return Err(StarterError::ServerInvalidVersion()) }
-    Ok(extra)
+    #[tokio::test]
+    async fn packet() -> Result<()> {
+        let (mut client, mut server) = create().await?;
+
+        let source = &[1, 2, 3, 4, 5];
+        write_packet(&mut client, &mut Bytes::from_static(source)).await?;
+        let res = read_packet(&mut server).await?;
+        assert_eq!(source, res.chunk());
+
+        Ok(())
+    }
 }
