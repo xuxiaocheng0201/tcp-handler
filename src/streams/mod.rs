@@ -61,6 +61,17 @@ macro_rules! impl_tcp_handler {
                 &self.version
             }
         }
+        #[cfg(feature = "stream_net")]
+        impl $server<::tokio::io::BufReader<::tokio::net::tcp::OwnedReadHalf>, ::tokio::io::BufWriter<::tokio::net::tcp::OwnedWriteHalf>> {
+            #[cfg_attr(docsrs, doc(cfg(feature = "stream_net")))]
+            #[doc = concat!("Construct the `", stringify!($server), "` from [`tokio::net::TcpStream`].")]
+            pub async fn from_stream<P: FnOnce(&str) -> bool>(stream: ::tokio::net::TcpStream, identifier: &str, version_prediction: P, version: &str) -> Result<Self, $crate::protocols::common::StarterError> {
+                let (reader, writer) = stream.into_split();
+                let reader = ::tokio::io::BufReader::new(reader);
+                let writer = ::tokio::io::BufWriter::new(writer);
+                Self::new(reader, writer, identifier, version_prediction, version).await
+            }
+        }
     };
     (client $client: ident) => {
         impl_tcp_handler!(@ $client);
@@ -68,9 +79,17 @@ macro_rules! impl_tcp_handler {
         #[cfg(feature = "stream_net")]
         impl $client<::tokio::io::BufReader<::tokio::net::tcp::OwnedReadHalf>, ::tokio::io::BufWriter<::tokio::net::tcp::OwnedWriteHalf>> {
             #[cfg_attr(docsrs, doc(cfg(feature = "stream_net")))]
-            #[doc = concat!("Connection to `addr`, and construct the `", stringify!($client), "` using [", stringify!($client), "::new].")]
+            #[doc = concat!("Connection to `addr`, and construct the `", stringify!($client), "` using [`", stringify!($client), "::new`].")]
             pub async fn connect<A: ::tokio::net::ToSocketAddrs>(addr: A, identifier: &str, version: &str) -> Result<Self, $crate::protocols::common::StarterError> {
                 let stream = ::tokio::net::TcpStream::connect(addr).await?;
+                Self::from_stream(stream, identifier, version).await
+            }
+        }
+        #[cfg(feature = "stream_net")]
+        impl $client<::tokio::io::BufReader<::tokio::net::tcp::OwnedReadHalf>, ::tokio::io::BufWriter<::tokio::net::tcp::OwnedWriteHalf>> {
+            #[cfg_attr(docsrs, doc(cfg(feature = "stream_net")))]
+            #[doc = concat!("Construct the `", stringify!($client), "` from [`tokio::net::TcpStream`].")]
+            pub async fn from_stream(stream: ::tokio::net::TcpStream, identifier: &str, version: &str) -> Result<Self, $crate::protocols::common::StarterError> {
                 let (reader, writer) = stream.into_split();
                 let reader = ::tokio::io::BufReader::new(reader);
                 let writer = ::tokio::io::BufWriter::new(writer);

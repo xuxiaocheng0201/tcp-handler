@@ -57,12 +57,13 @@ This is an [issue](https://github.com/RustCrypto/RSA/issues/29) in [rsa](https:/
 
 # Example
 
-Directly transfer data. Without encryption and compression:
+With `TcpHandler`, you can use all the protocols in a similar way.
 
 ```rust
-use anyhow::Result;
+use anyhow::{Error, Result};
 use bytes::{Buf, BufMut, BytesMut};
-use tcp_handler::protocols::raw::{client_init, client_start, recv, send, server_init, server_start};
+use tcp_handler::raw::*;
+use tokio::{spawn, try_join};
 use tokio::net::{TcpListener, TcpStream};
 use variable_len_reader::{VariableReader, VariableWriter};
 
@@ -73,100 +74,28 @@ async fn main() -> Result<()> {
     let mut client = TcpStream::connect(server.local_addr()?).await?;
     let (mut server, _) = server.accept().await?;
     
-    // Prepare the protocol of tcp-handler.
-    let client_init = client_init(&mut client, "test", "0.0.0").await;
-    let server_init = server_init(&mut server, "test", |v| v == "0.0.0").await;
-    server_start(&mut server, "test", "0.0.0", server_init).await?;
-    client_start(&mut client, client_init).await?;
-    
-    // Send.
-    let mut writer = BytesMut::new().writer();
-    writer.write_string("hello server.")?;
-    send(&mut client, &mut writer.into_inner()).await?;
-    
-    // Receive.
-    let mut reader = recv(&mut server).await?.reader();
-    let message = reader.read_string()?;
-    assert_eq!("hello server.", message);
-    
-    Ok(())
-}
-```
+    let client = spawn(async move {
+        let mut client = TcpClientHandlerRaw::from_stream(client, "YourApplication", "1.0.0").await?;
 
-Transfer message with encrypted protocol:
+        // Send.
+        let mut writer = BytesMut::new().writer();
+        writer.write_string("hello server.")?;
+        client.send(&mut writer.into_inner()).await?;
+      
+        Ok::<_, Error>(())
+    });
+    let server = spawn(async move {
+        let mut server = TcpServerHandlerRaw::from_stream(server, "YourApplication", |v| v == "1.0.0", "1.0.0").await?;
+        assert_eq!(server.get_client_version(), "1.0.0");
 
-```rust
-use anyhow::Result;
-use bytes::{Buf, BufMut, BytesMut};
-use tcp_handler::protocols::encrypt::{client_init, client_start, recv, send, server_init, server_start};
-use tokio::net::{TcpListener, TcpStream};
-use variable_len_reader::{VariableReader, VariableWriter};
+        // Receive.
+        let mut reader = server.recv().await?.reader();
+        let res = reader.read_string()?;
+        assert_eq!(res, "hello server.");
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Create tcp stream.
-    let server = TcpListener::bind("localhost:0").await?;
-    let mut client = TcpStream::connect(server.local_addr()?).await?;
-    let (mut server, _) = server.accept().await?;
-    
-    // Prepare the protocol of tcp-handler and the ciphers.
-    let client_init = client_init(&mut client, "test", "0.0.0").await;
-    let server_init = server_init(&mut server, "test", |v| v == "0.0.0").await;
-  let (server_cipher, _protocol_version, _client_version) =
-          server_start(&mut server, "test", "0.0.0", server_init).await?;
-    let client_cipher = client_start(&mut client, client_init).await?;
-    
-    // Send.
-    let mut writer = BytesMut::new().writer();
-    writer.write_string("hello server.")?;
-    send(&mut client, &mut writer.into_inner(), &client_cipher).await?;
-    
-    // Receive.
-    let mut reader = recv(&mut server, &server_cipher).await?.reader();
-    let message = reader.read_string()?;
-    assert_eq!("hello server.", message);
-    
-    // Send.
-    let mut writer = BytesMut::new().writer();
-    writer.write_string("hello client.")?;
-    send(&mut client, &mut writer.into_inner(), &server_cipher).await?;
-    
-    // Receive.
-    let mut reader = recv(&mut server, &client_cipher).await?.reader();
-    let message = reader.read_string()?;
-    assert_eq!("hello client.", message);
-    
-    Ok(())
-}
-```
-
-The transmission method for compressed messages is similar to the above two,
-please use methods in `compress` and `compress_encrypt` mod.
-
-Send discontinuous data chunks:
-
-```rust
-use anyhow::Result;
-use bytes::{Buf, Bytes};
-use tcp_handler::protocols::raw::{client_init, client_start, recv, send, server_init, server_start};
-use tokio::net::{TcpListener, TcpStream};
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Connect
-    let server = TcpListener::bind("localhost:0").await?;
-    let mut client = TcpStream::connect(server.local_addr()?).await?;
-    let (mut server, _) = server.accept().await?;
-    let client_init = client_init(&mut client, "chain", "0").await;
-    let server_init = server_init(&mut server, "chain", |v| v == "0").await;
-    server_start(&mut server, "chain", "0", server_init).await?;
-    client_start(&mut client, client_init).await?;
-
-    // Using chain
-    let mut messages = Bytes::from("a").chain(Bytes::from("b")).chain(Bytes::from("c"));
-    send(&mut client, &mut messages).await?;
-    let message = recv(&mut server).await?;
-    assert_eq!(b"abc", message.as_ref());
+        Ok::<_, Error>(())
+    });
+    try_join!(client, server)?;
     Ok(())
 }
 ```

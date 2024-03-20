@@ -1,6 +1,6 @@
 use std::future::Future;
 use anyhow::Result;
-use bytes::BytesMut;
+use bytes::Bytes;
 use criterion::{Criterion, criterion_group, criterion_main};
 use tokio::io::{AsyncRead, AsyncWrite, duplex, split};
 use tokio::runtime::Runtime;
@@ -12,7 +12,7 @@ use tcp_handler::raw::{TcpClientHandlerRaw, TcpServerHandlerRaw};
 use tcp_handler::TcpHandler;
 
 fn create() -> (impl AsyncRead + Unpin, impl AsyncWrite + Unpin, impl AsyncRead + Unpin, impl AsyncWrite + Unpin) {
-    let (client, server) = duplex(1024);
+    let (client, server) = duplex(1 << 13);
     let (cr, cw) = split(client);
     let (sr, sw) = split(server);
     (cr, cw, sr, sw)
@@ -48,8 +48,8 @@ async fn create_compress_encrypt() -> Result<(impl TcpHandler, impl TcpHandler)>
 
 async fn send_recv<F: Future<Output = Result<(impl TcpHandler, impl TcpHandler)>>>(future: F) -> Result<()> {
     let (mut sender, mut receiver) = future.await?;
-    let bytes = BytesMut::zeroed(1 << 20);
-    sender.handler_send(&mut bytes.freeze()).await?;
+    let mut bytes = Bytes::from_static(include_bytes!("protocols.rs"));
+    sender.handler_send(&mut bytes).await?;
     receiver.handler_recv().await?;
     Ok(())
 }
@@ -89,4 +89,24 @@ create encrypt          time:   [1.1634 s 1.4086 s 1.6721 s]
 Benchmarking create compress_encrypt: Warming up for 3.0000 s
 Warning: Unable to complete 20 samples in 5.0s. You may wish to increase target time to 20.3s, or reduce sample count to 10.
 create compress_encrypt time:   [1.1133 s 1.4855 s 1.8974 s]
+
+raw                     time:   [86.883 µs 88.998 µs 91.251 µs]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+
+compress                time:   [358.83 µs 377.84 µs 401.31 µs]
+Found 1 outliers among 20 measurements (5.00%)
+  1 (5.00%) high severe
+
+Benchmarking encrypt: Warming up for 3.0000 s
+Warning: Unable to complete 20 samples in 5.0s. You may wish to increase target time to 22.2s, or reduce sample count to 10.
+encrypt                 time:   [1.3192 s 1.7113 s 2.1692 s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
+
+Benchmarking compress_encrypt: Warming up for 3.0000 s
+Warning: Unable to complete 20 samples in 5.0s. You may wish to increase target time to 37.6s, or reduce sample count to 10.
+compress_encrypt        time:   [1.3389 s 1.6900 s 2.0983 s]
+Found 2 outliers among 20 measurements (10.00%)
+  2 (10.00%) high mild
 */
