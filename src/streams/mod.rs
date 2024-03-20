@@ -1,7 +1,15 @@
 //! Useful `TcpHandler`s
 
 pub mod raw;
+#[cfg(feature = "compression")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compression")))]
 pub mod compress;
+#[cfg(feature = "encryption")]
+#[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
+pub mod encrypt;
+// #[cfg(feature = "compress_encryption")]
+// #[cfg_attr(docsrs, doc(cfg(feature = "compress_encryption")))]
+// pub mod compress_encrypt;
 
 use async_trait::async_trait;
 use bytes::{Buf, BytesMut};
@@ -21,16 +29,6 @@ pub trait TcpHandler {
 
 macro_rules! impl_tcp_handler {
     (@ $struct: ident) => {
-        impl<R: ::tokio::io::AsyncRead + Unpin, W: ::tokio::io::AsyncWrite + Unpin> $struct<R, W> {
-            pub async fn send<B: ::bytes::Buf>(&mut self, message: &mut B) -> Result<(), $crate::protocols::common::PacketError> {
-                send(&mut self.writer, message).await
-            }
-
-            pub async fn recv(&mut self) -> Result<::bytes::BytesMut, $crate::protocols::common::PacketError> {
-                recv(&mut self.reader).await
-            }
-        }
-
         #[::async_trait::async_trait]
         impl<R: ::tokio::io::AsyncRead + Unpin + Send, W: ::tokio::io::AsyncWrite + Unpin + Send> $crate::streams::TcpHandler for $struct<R, W> {
             async fn handler_send<B: ::bytes::Buf + Send>(&mut self, message: &mut B) -> Result<(), $crate::protocols::common::PacketError> {

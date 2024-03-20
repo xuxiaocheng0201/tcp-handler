@@ -1,5 +1,6 @@
+use bytes::{Buf, BytesMut};
 use tokio::io::{AsyncRead, AsyncWrite};
-use crate::common::StarterError;
+use crate::common::{PacketError, StarterError};
 use crate::raw::{self, send, recv};
 use crate::streams::impl_tcp_handler;
 
@@ -15,6 +16,22 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> TcpServerHandlerRaw<R, W> {
         let (_protocol_version, application_version) = raw::server_start(&mut writer, identifier, version, init).await?;
         Ok(Self { reader, writer, version: application_version })
     }
+
+    pub fn into_inner(self) -> (R, W) {
+        (self.reader, self.writer)
+    }
+
+    pub unsafe fn from_inner(reader: R, writer: W, version: String) -> Self {
+        Self { reader, writer, version }
+    }
+
+    pub async fn send<B: Buf>(&mut self, message: &mut B) -> Result<(), PacketError> {
+        send(&mut self.writer, message).await
+    }
+
+    pub async fn recv(&mut self) -> Result<BytesMut, PacketError> {
+        recv(&mut self.reader).await
+    }
 }
 
 impl_tcp_handler!(server TcpServerHandlerRaw);
@@ -26,16 +43,26 @@ pub struct TcpClientHandlerRaw<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> {
 }
 
 impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> TcpClientHandlerRaw<R, W> {
-    async fn init(&mut self, identifier: &str, version: &str) -> Result<(), StarterError> {
-        let init = raw::client_init(&mut self.writer, identifier, version).await;
-        raw::client_start(&mut self.reader, init).await?;
-        Ok(())
+    pub async fn new(mut reader: R, mut writer: W, identifier: &str, version: &str) -> Result<Self, StarterError> {
+        let init = raw::client_init(&mut writer, identifier, version).await;
+        raw::client_start(&mut reader, init).await?;
+        Ok(Self { reader, writer })
     }
 
-    pub async fn new(reader: R, writer: W, identifier: &str, version: &str) -> Result<Self, StarterError> {
-        let mut handler = Self { reader, writer };
-        handler.init(identifier, version).await?;
-        Ok(handler)
+    pub fn into_inner(self) -> (R, W) {
+        (self.reader, self.writer)
+    }
+
+    pub unsafe fn from_inner(reader: R, writer: W) -> Self {
+        Self { reader, writer }
+    }
+
+    pub async fn send<B: Buf>(&mut self, message: &mut B) -> Result<(), PacketError> {
+        send(&mut self.writer, message).await
+    }
+
+    pub async fn recv(&mut self) -> Result<BytesMut, PacketError> {
+        recv(&mut self.reader).await
     }
 }
 

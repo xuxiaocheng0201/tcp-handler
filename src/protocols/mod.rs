@@ -1,3 +1,8 @@
+//! The protocols.
+//! See the sub mod docs for more info.
+//!
+//! [raw], [compress], [encrypt], and [compress_encrypt].
+
 pub mod common;
 
 pub mod raw;
