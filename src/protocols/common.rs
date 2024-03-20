@@ -252,10 +252,12 @@ pub(crate) async fn read_packet<R: AsyncRead + Unpin>(stream: &mut R) -> Result<
 /// Flush if the `auto_flush` feature is enabled.
 #[inline]
 pub(crate) async fn flush<W: AsyncWrite + Unpin>(stream: &mut W) -> Result<(), std::io::Error> {
-    if cfg!(feature = "auto_flush") {
+    #[cfg(feature = "auto_flush")] {
         use tokio::io::AsyncWriteExt;
         stream.flush().await
-    } else {
+    }
+    #[cfg(not(feature = "auto_flush"))] {
+        let _ = stream;
         Ok(())
     }
 }

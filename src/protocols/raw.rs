@@ -1,6 +1,6 @@
 //! Raw protocol. Without encryption and compression.
 //!
-//! Not recommend. It's unsafe and slow.
+//! Not recommend. It's unsafe but really fast.
 //!
 //! # Examples
 //! ```rust

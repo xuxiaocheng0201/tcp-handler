@@ -54,6 +54,11 @@ anyhow = "^1"
 tokio = { version = "^1", features = ["macros", "io-util", "net"] }
 variable-len-reader = { version = "^3", features = ["full"] }
 serde_json = "^1"
+criterion = { version = "~0.5", features = ["async_tokio"] }
+
+[[bench]]
+name = "protocols"
+harness = false
 
 [badges]
 maintenance = { status = "passively-maintained" }
