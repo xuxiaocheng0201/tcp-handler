@@ -8,10 +8,18 @@
 ### Project ###
 !/src
 !/build.rs
-!/LICENSE-MIT
-!/LICENSE-APACHE
+
+## Tests ##
+!/test-builds.bat
+
+## Benched ##
+!/benches
+
+## Docs ##
 !/README.md
 !/README_zh.md
 !/CHANGELOG.md
-!/test-builds.bat
-!/benches
+
+## License ##
+!/LICENSE-MIT
+!/LICENSE-APACHE
