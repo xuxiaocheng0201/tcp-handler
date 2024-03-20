@@ -33,7 +33,7 @@ default = ["compress_encryption"]
 
 compression = ["dep:flate2", "variable-len-reader/sync"]
 encryption = ["dep:rand", "dep:_aead_with_feature", "dep:rsa", "dep:aes-gcm", "variable-len-reader/sync"]
-compress_encryption = ["compression", "encryption"]
+compress_encryption = ["compression", "encryption", "variable-len-reader/sync"]
 
 [build-dependencies]
 reportme = ">=0.2"

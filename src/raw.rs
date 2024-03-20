@@ -60,7 +60,7 @@
 //! out <--  ─┘
 //! ```
 
-use bytes::Buf;
+use bytes::{Buf, BytesMut};
 use tokio::io::{AsyncRead, AsyncWrite};
 use crate::common::*;
 
@@ -244,7 +244,7 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 /// # }
 /// ```
 #[inline]
-pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R) -> Result<impl Buf + Send, PacketError> {
+pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R) -> Result<BytesMut, PacketError> {
     read_packet(stream).await
 }
 

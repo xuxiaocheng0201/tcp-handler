@@ -69,7 +69,7 @@
 //!         ┌────────────────────────┐ (Packet data.)
 //! in  --> │ ********************** │
 //!         └────────────────────────┘
-//!           │ // FIXME: copied once here.
+//!           │
 //!           │─ Decrypt in-place
 //!           v
 //!         ┌─────┬─────────────────────┐ (Decrypted bytes.)
@@ -84,6 +84,7 @@ use bytes::{Buf, BufMut, BytesMut};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::task::block_in_place;
 use variable_len_reader::{AsyncVariableReader, AsyncVariableWriter};
+use variable_len_reader::helper::{AsyncReaderHelper, AsyncWriterHelper};
 use crate::common::*;
 
 /// Init the client side in tcp-handler encrypt protocol.
@@ -118,8 +119,8 @@ use crate::common::*;
 pub async fn client_init<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str, version: &str) -> Result<rsa::RsaPrivateKey, StarterError> {
     let (key, n, e) = block_in_place(|| generate_rsa_private())?;
     write_head(stream, ProtocolVariant::Encryption, identifier, version).await?;
-    write_u8_vec(stream, &n).await?;
-    write_u8_vec(stream, &e).await?;
+    AsyncWriterHelper(stream).help_write_u8_vec(&n).await?;
+    AsyncWriterHelper(stream).help_write_u8_vec(&e).await?;
     Ok(key)
 }
 
@@ -157,8 +158,8 @@ pub async fn client_init<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str
 /// ```
 pub async fn server_init<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(stream: &mut R, identifier: &str, version: P) -> Result<((u16, String), rsa::RsaPublicKey), StarterError> {
     let versions = read_head(stream, ProtocolVariant::Encryption, identifier, version).await?;
-    let n = read_u8_vec(stream).await?;
-    let e = read_u8_vec(stream).await?;
+    let n = AsyncReaderHelper(stream).help_read_u8_vec().await?;
+    let e = AsyncReaderHelper(stream).help_read_u8_vec().await?;
     let key = block_in_place(move || compose_rsa_public(n, e))?;
     Ok((versions, key))
 }
@@ -193,7 +194,7 @@ pub async fn server_init<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(stream: 
 /// ```
 pub async fn client_start<R: AsyncRead + Unpin>(stream: &mut R, last: Result<rsa::RsaPrivateKey, StarterError>) -> Result<Cipher, StarterError> {
     let rsa = read_last(stream, last).await?;
-    let encrypted_aes = read_u8_vec(stream).await?;
+    let encrypted_aes = AsyncReaderHelper(stream).help_read_u8_vec().await?;
     let mut nonce = [0; 12];
     stream.read_more(&mut nonce).await?;
     let cipher = block_in_place(move || {
@@ -251,7 +252,7 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
         let cipher = aes_gcm::Aes256Gcm::new(&aes);
         Ok::<_, StarterError>((cipher, nonce, encrypted_aes))
     })?;
-    write_u8_vec(stream, &encrypted_aes).await?;
+    AsyncWriterHelper(stream).help_write_u8_vec(&encrypted_aes).await?;
     stream.write_more(&nonce).await?;
     Ok((Cipher::new((cipher, nonce)), va, vb))
 }
@@ -338,18 +339,14 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 /// #     Ok(())
 /// # }
 /// ```
-pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R, cipher: &Cipher) -> Result<impl Buf + Send, PacketError> {
+pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R, cipher: &Cipher) -> Result<BytesMut, PacketError> {
     let mut bytes = read_packet(stream).await?;
     let message = block_in_place(move || {
         use aes_gcm::aead::AeadMutInPlace;
-        use variable_len_reader::{VariableReadable, VariableWritable};
-            let len = bytes.remaining();
-            let mut buffer = BytesMut::with_capacity(len).writer();
-            buffer.write_more_buf(&mut bytes)?; drop(bytes);
-            let mut buffer = buffer.into_inner();
+        use variable_len_reader::VariableReadable;
         let ((mut cipher, nonce), lock) = Cipher::get(cipher)?;
-        cipher.decrypt_in_place(&nonce, &[], &mut buffer)?;
-        let mut reader = buffer.reader();
+        cipher.decrypt_in_place(&nonce, &[], &mut bytes)?;
+        let mut reader = bytes.reader();
         let mut new_nonce = [0; 12];
         reader.read_more(&mut new_nonce)?;
         let new_nonce = aes_gcm::Nonce::from(new_nonce);

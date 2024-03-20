@@ -1,11 +1,11 @@
 //! Common utilities for this crate.
 
-use std::io::{Cursor, Error};
-use bytes::Buf;
+use std::io::Error;
+use bytes::{Buf, BufMut, BytesMut};
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWrite};
-use variable_len_reader::{AsyncVariableReadable, AsyncVariableReader, AsyncVariableWritable, AsyncVariableWriter};
-use variable_len_reader::util::read_buf::OwnedReadBuf;
+use variable_len_reader::{AsyncVariableReader, AsyncVariableWriter};
+use variable_len_reader::helper::{AsyncReaderHelper, AsyncWriterHelper};
 use crate::config::get_max_packet_size;
 
 /// Error when send/recv packets.
@@ -131,31 +131,6 @@ impl From<ProtocolVariant> for [bool; 2] {
     }
 }
 
-#[inline]
-pub(crate) async fn write_u8_vec<W: AsyncWrite + Unpin>(stream: &mut W, vec: &[u8]) -> Result<(), <W as AsyncVariableWritable>::Error> {
-    stream.write_usize_varint_ap(vec.len()).await?;
-    stream.write_more(vec).await?;
-    Ok(())
-}
-
-#[inline]
-pub(crate) async fn write_string<W: AsyncWrite + Unpin>(stream: &mut W, string: &str) -> Result<(), <W as AsyncVariableWritable>::Error> {
-    write_u8_vec(stream, string.as_bytes()).await
-}
-
-#[inline]
-pub(crate) async fn read_u8_vec<R: AsyncRead + Unpin>(stream: &mut R) -> Result<Vec<u8>, <R as AsyncVariableReadable>::Error> {
-    let len = stream.read_usize_varint_ap().await?;
-    let mut buf = vec![0; len];
-    stream.read_more(&mut buf).await?;
-    Ok(buf)
-}
-
-#[inline]
-pub(crate) async fn read_string<R: AsyncRead + Unpin>(stream: &mut R) -> Result<String, <R as AsyncVariableReadable>::Error> {
-    let buf = read_u8_vec(stream).await?;
-    String::from_utf8(buf).map_err(|e| R::read_string_error("ReadString", e))
-}
 
 /// In client side.
 /// ```text
@@ -173,8 +148,8 @@ pub(crate) async fn write_head<W: AsyncWrite + Unpin>(stream: &mut W, protocol: 
     stream.write_more(&MAGIC_BYTES).await?;
     stream.write_u16_raw_be(MAGIC_VERSION).await?;
     stream.write_bools_2(protocol.into()).await?;
-    write_string(stream, identifier).await?;
-    write_string(stream, version).await?;
+    AsyncWriterHelper(stream).help_write_string(identifier).await?;
+    AsyncWriterHelper(stream).help_write_string(version).await?;
     Ok(())
 }
 
@@ -188,9 +163,9 @@ pub(crate) async fn read_head<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(str
     if protocol_version != MAGIC_VERSION { return Err(StarterError::InvalidStream()); }
     let protocol_read = stream.read_bools_2().await?.into();
     if protocol_read != protocol { return Err(StarterError::InvalidProtocol(protocol_read)); }
-    let identifier_read = read_string(stream).await?;
+    let identifier_read = AsyncReaderHelper(stream).help_read_string().await?;
     if identifier_read != identifier { return Err(StarterError::InvalidIdentifier(identifier_read)); }
-    let version_read = read_string(stream).await?;
+    let version_read = AsyncReaderHelper(stream).help_read_string().await?;
     if !version(&version_read) { return Err(StarterError::InvalidVersion(version_read)); }
     Ok((protocol_version, version_read))
 }
@@ -214,11 +189,11 @@ pub(crate) async fn write_last<W: AsyncWrite + Unpin, E>(stream: &mut W, protoco
                 }
                 StarterError::InvalidIdentifier(_) => {
                     stream.write_bools_2([false, true]).await?;
-                    write_string(stream, identifier).await?;
+                    AsyncWriterHelper(stream).help_write_string(identifier).await?;
                 }
                 StarterError::InvalidVersion(_) => {
                     stream.write_bools_2([true, false]).await?;
-                    write_string(stream, version).await?;
+                    AsyncWriterHelper(stream).help_write_string(version).await?;
                 }
                 _ => {}
             }
@@ -238,8 +213,8 @@ pub(crate) async fn read_last<R: AsyncRead + Unpin, E>(stream: &mut R, last: Res
     match stream.read_bools_2().await? {
         [true, true] => Ok(extra),
         [false, false] => Err(StarterError::InvalidProtocol(stream.read_bools_2().await?.into())),
-        [false, true] => Err(StarterError::InvalidIdentifier(read_string(stream).await?)),
-        [true, false] => Err(StarterError::InvalidVersion(read_string(stream).await?)),
+        [false, true] => Err(StarterError::InvalidIdentifier(AsyncReaderHelper(stream).help_read_string().await?)),
+        [true, false] => Err(StarterError::InvalidVersion(AsyncReaderHelper(stream).help_read_string().await?)),
     }
 }
 
@@ -266,13 +241,12 @@ pub(crate) async fn write_packet<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, 
 }
 
 /// See [write_packet].
-pub(crate) async fn read_packet<R: AsyncRead + Unpin>(stream: &mut R) -> Result<impl Buf + Send, PacketError> {
+pub(crate) async fn read_packet<R: AsyncRead + Unpin>(stream: &mut R) -> Result<BytesMut, PacketError> {
     let len = stream.read_usize_varint_ap().await?;
     check_bytes_len(len)?;
-    let mut buf = OwnedReadBuf::new(vec![0; len]);
+    let mut buf = BytesMut::with_capacity(len).limit(len);
     stream.read_more_buf(&mut buf).await?;
-    let buf = Cursor::new(buf.into_inner());
-    Ok(buf)
+    Ok(buf.into_inner())
 }
 
 
