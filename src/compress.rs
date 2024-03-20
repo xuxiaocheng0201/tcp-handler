@@ -74,7 +74,6 @@ use bytes::{Buf, BufMut, BytesMut};
 use flate2::write::{DeflateDecoder, DeflateEncoder};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::task::block_in_place;
-use variable_len_reader::VariableWritable;
 use crate::common::*;
 use crate::config::get_compression;
 
@@ -233,6 +232,7 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
 pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B) -> Result<(), PacketError> {
     let level = get_compression();
     let mut bytes = block_in_place(move || {
+        use variable_len_reader::VariableWritable;
         let mut encoder = DeflateEncoder::new(BytesMut::new().writer(), level);
         encoder.write_more_buf(message)?;
         Ok::<_, PacketError>(encoder.finish()?.into_inner())
@@ -273,6 +273,7 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R) -> Result<BytesMut, PacketError> {
     let mut bytes = read_packet(stream).await?;
     let message = block_in_place(move || {
+        use variable_len_reader::VariableWritable;
         let mut decoder = DeflateDecoder::new(BytesMut::new().writer());
         decoder.write_more_buf(&mut bytes)?;
         Ok::<_, PacketError>(decoder.finish()?.into_inner())

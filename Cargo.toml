@@ -21,7 +21,7 @@ variable-len-reader = { version = "^3.2", default-features = false, features = [
 
 flate2 = { version = "^1", optional = true }
 rand = { version = "~0.8", optional = true }
-_aead_with_feature = { package = "aead", version = "0", optional = true, default-features = false, features = ["bytes"] }
+__aead_with_feature = { package = "aead", version = "0", optional = true, default-features = false, features = ["bytes"] }
 rsa = { version = "~0.9", optional = true, default-features = false, features = ["std", "sha2"] }
 aes-gcm = { version = "~0.10", optional = true, default-features = false, features = ["std", "aes", "rand_core"] }
 
@@ -31,16 +31,17 @@ opt-level = 3 # Speed up rsa key gen.
 [features]
 default = ["compress_encryption"]
 
-compression = ["dep:flate2", "variable-len-reader/sync"]
-encryption = ["dep:rand", "dep:_aead_with_feature", "dep:rsa", "dep:aes-gcm", "variable-len-reader/sync"]
-compress_encryption = ["compression", "encryption", "variable-len-reader/sync"]
+__internal_variable_len_reader_with_feature = ["variable-len-reader/sync", "variable-len-reader/std-comp"]
+compression = ["dep:flate2", "__internal_variable_len_reader_with_feature"]
+encryption = ["dep:rand", "dep:__aead_with_feature", "dep:rsa", "dep:aes-gcm", "__internal_variable_len_reader_with_feature"]
+compress_encryption = ["compression", "encryption", "__internal_variable_len_reader_with_feature"]
 
 [build-dependencies]
 reportme = ">=0.2"
 
 [dev-dependencies]
-anyhow = "^1.0"
-tokio = { version = "^1.35", features = ["macros", "io-util", "net"] }
+anyhow = "^1"
+tokio = { version = "^1", features = ["macros", "io-util", "net"] }
 variable-len-reader = { version = "^3", features = ["full"] }
 
 [badges]
