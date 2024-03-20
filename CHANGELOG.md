@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2024-3-20
+
+### Added
+
+* 增加`streams`，进一步简化代码。
+* 添加Benchmark。
+
+### Changed
+
+* 更新文档。
+* 更改pub位置。
+
 ## [0.6.0] - 2024-3-20
 
 ### Added

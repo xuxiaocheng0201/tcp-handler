@@ -38,7 +38,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tcp-handler = "~0.6"
+tcp-handler = "^1.0"
 ```
 
 
