@@ -1,9 +1,12 @@
+//! `TcpHandler` warps the [`crate::protocols::compress`] protocol.
+
 use bytes::{Buf, BytesMut};
 use tokio::io::{AsyncRead, AsyncWrite};
 use crate::common::{PacketError, StarterError};
 use crate::compress::{self, send, recv};
 use crate::streams::impl_tcp_handler;
 
+/// The server side `TcpHandler` of the `compress` protocol.
 pub struct TcpServerHandlerCompress<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> {
     reader: R,
     writer: W,
@@ -11,25 +14,34 @@ pub struct TcpServerHandlerCompress<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>
 }
 
 impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> TcpServerHandlerCompress<R, W> {
+    /// Create and init a new `TcpServerHandlerCompress`.
     pub async fn new<P: FnOnce(&str) -> bool>(mut reader: R, mut writer: W, identifier: &str, version_prediction: P, version: &str) -> Result<Self, StarterError> {
         let init = compress::server_init(&mut reader, identifier, version_prediction).await;
         let (_protocol_version, application_version) = compress::server_start(&mut writer, identifier, version, init).await?;
         Ok(Self { reader, writer, version: application_version })
     }
 
+    /// Deconstruct the `TcpServerHandlerCompress` into the inner parts.
+    #[inline]
     pub fn into_inner(self) -> (R, W) {
         (self.reader, self.writer)
     }
 
-    /// Unsafe
+    /// **Unsafe!!!**
+    /// Construct the `TcpServerHandlerCompress` from the inner parts.
+    #[inline]
     pub fn from_inner(reader: R, writer: W, version: String) -> Self {
         Self { reader, writer, version }
     }
 
+    /// Send a message to the client.
+    #[inline]
     pub async fn send<B: Buf>(&mut self, message: &mut B) -> Result<(), PacketError> {
         send(&mut self.writer, message).await
     }
 
+    /// Receive a message from the client.
+    #[inline]
     pub async fn recv(&mut self) -> Result<BytesMut, PacketError> {
         recv(&mut self.reader).await
     }
@@ -38,31 +50,41 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> TcpServerHandlerCompress<R, W>
 impl_tcp_handler!(server TcpServerHandlerCompress);
 
 
+/// The client side `TcpHandler` of the `compress` protocol.
 pub struct TcpClientHandlerCompress<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> {
     reader: R,
     writer: W,
 }
 
 impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> TcpClientHandlerCompress<R, W> {
+    /// Create and init a new `TcpClientHandlerCompress`.
     pub async fn new(mut reader: R, mut writer: W, identifier: &str, version: &str) -> Result<Self, StarterError> {
         let init = compress::client_init(&mut writer, identifier, version).await;
         compress::client_start(&mut reader, init).await?;
         Ok(Self { reader, writer })
     }
 
+    /// Deconstruct the `TcpClientHandlerCompress` into the inner parts.
+    #[inline]
     pub fn into_inner(self) -> (R, W) {
         (self.reader, self.writer)
     }
 
-    /// Unsafe
+    /// **Unsafe!!!**
+    /// Construct the `TcpClientHandlerCompress` from the inner parts.
+    #[inline]
     pub fn from_inner(reader: R, writer: W) -> Self {
         Self { reader, writer }
     }
 
+    /// Send a message to the server.
+    #[inline]
     pub async fn send<B: Buf>(&mut self, message: &mut B) -> Result<(), PacketError> {
         send(&mut self.writer, message).await
     }
 
+    /// Receive a message from the server.
+    #[inline]
     pub async fn recv(&mut self) -> Result<BytesMut, PacketError> {
         recv(&mut self.reader).await
     }

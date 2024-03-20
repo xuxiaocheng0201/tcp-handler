@@ -32,7 +32,7 @@ pub enum PacketError {
 
     /// Broken stream cipher. This is a fatal error.
     ///
-    /// When another error returned during send/recv, the stream is broken because no [Cipher] received.
+    /// When another error returned during send/recv, the stream is broken because no [`Cipher`] received.
     /// In order not to panic, marks this stream as broken and returns this error.
     #[cfg(feature = "encryption")]
     #[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
@@ -43,7 +43,7 @@ pub enum PacketError {
 /// Error when init/start protocol.
 #[derive(Error, Debug)]
 pub enum StarterError {
-    /// [MAGIC_BYTES] isn't matched. Or the [MAGIC_VERSION] is no longer supported.
+    /// [`MAGIC_BYTES`] isn't matched. Or the [`MAGIC_VERSION`] is no longer supported.
     /// Please confirm that you are connected to the correct address.
     #[error("Invalid stream. MAGIC is not matched.")]
     InvalidStream(),
@@ -79,7 +79,7 @@ pub enum StarterError {
 }
 
 
-/// The MAGIC is generated in j-shell environment:
+/// The MAGIC is generated in `j-shell` environment:
 /// ```java
 /// var r = new Random("tcp-handler".hashCode());
 /// r.nextInt(0, 255); r.nextInt(0, 255);
@@ -154,7 +154,7 @@ pub(crate) async fn write_head<W: AsyncWrite + Unpin>(stream: &mut W, protocol: 
 }
 
 /// In server side.
-/// See [write_head].
+/// See [`write_head`].
 pub(crate) async fn read_head<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(stream: &mut R, protocol: ProtocolVariant, identifier: &str, version: P) -> Result<(u16, String), StarterError> {
     let mut magic = [0; 4];
     stream.read_more(&mut magic).await?;
@@ -207,7 +207,7 @@ pub(crate) async fn write_last<W: AsyncWrite + Unpin, E>(stream: &mut W, protoco
 }
 
 /// In client side.
-/// See [write_last].
+/// See [`write_last`].
 pub(crate) async fn read_last<R: AsyncRead + Unpin, E>(stream: &mut R, last: Result<E, StarterError>) -> Result<E, StarterError> {
     let extra = last?;
     match stream.read_bools_2().await? {
@@ -240,7 +240,7 @@ pub(crate) async fn write_packet<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, 
     Ok(())
 }
 
-/// See [write_packet].
+/// See [`write_packet`].
 pub(crate) async fn read_packet<R: AsyncRead + Unpin>(stream: &mut R) -> Result<BytesMut, PacketError> {
     let len = stream.read_usize_varint_ap().await?;
     check_bytes_len(len)?;

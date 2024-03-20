@@ -1,4 +1,6 @@
-//! Useful `TcpHandler`s
+//! Helpful `TcpHandler`s.
+//!
+//! These structs wrap the functions in [crate::protocols].
 
 pub mod raw;
 #[cfg(feature = "compression")]
@@ -15,12 +17,19 @@ use async_trait::async_trait;
 use bytes::{Buf, BytesMut};
 use crate::common::PacketError;
 
-/// The basic handler trait, providing send and receive methods.
+/// The handler trait, providing send and receive methods.
+///
+/// This trait uses [`async_trait`] so the parameters require [`Send`] mark.
 #[async_trait]
 pub trait TcpHandler {
+    /// Send a message to the remote.
     async fn handler_send<B: Buf + Send>(&mut self, message: &mut B) -> Result<(), PacketError>;
+
+    /// Receive a message from the remote.
     async fn handler_recv(&mut self) -> Result<BytesMut, PacketError>;
 
+    /// Send and receive a message.
+    #[inline]
     async fn handler_send_recv<B: Buf + Send>(&mut self, message: &mut B) -> Result<BytesMut, PacketError> {
         self.handler_send(message).await?;
         self.handler_recv().await
@@ -31,10 +40,12 @@ macro_rules! impl_tcp_handler {
     (@ $struct: ident) => {
         #[::async_trait::async_trait]
         impl<R: ::tokio::io::AsyncRead + Unpin + Send, W: ::tokio::io::AsyncWrite + Unpin + Send> $crate::streams::TcpHandler for $struct<R, W> {
+            #[inline]
             async fn handler_send<B: ::bytes::Buf + Send>(&mut self, message: &mut B) -> Result<(), $crate::protocols::common::PacketError> {
                 self.send(message).await
             }
 
+            #[inline]
             async fn handler_recv(&mut self) -> Result<::bytes::BytesMut, $crate::protocols::common::PacketError> {
                 self.recv().await
             }
@@ -44,6 +55,8 @@ macro_rules! impl_tcp_handler {
         impl_tcp_handler!(@ $server);
 
         impl<R: ::tokio::io::AsyncRead + Unpin, W: ::tokio::io::AsyncWrite + Unpin> $server<R, W> {
+            /// Get the client's application version.
+            #[inline]
             pub fn get_client_version(&self) -> &str {
                 &self.version
             }
@@ -55,7 +68,7 @@ macro_rules! impl_tcp_handler {
         #[cfg(feature = "stream_net")]
         impl $client<::tokio::io::BufReader<::tokio::net::tcp::OwnedReadHalf>, ::tokio::io::BufWriter<::tokio::net::tcp::OwnedWriteHalf>> {
             #[cfg_attr(docsrs, doc(cfg(feature = "stream_net")))]
-            #[doc(concat!("Connection to `addr`, and construct the `", stringify!($client), "` using [", , stringify!($client), "::new]."))]
+            #[doc = concat!("Connection to `addr`, and construct the `", stringify!($client), "` using [", stringify!($client), "::new].")]
             pub async fn connect<A: ::tokio::net::ToSocketAddrs>(addr: A, identifier: &str, version: &str) -> Result<Self, $crate::protocols::common::StarterError> {
                 let stream = ::tokio::net::TcpStream::connect(addr).await?;
                 let (reader, writer) = stream.into_split();

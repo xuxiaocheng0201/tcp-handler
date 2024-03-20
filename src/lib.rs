@@ -1,7 +1,7 @@
 #![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![forbid(unsafe_code)]
-#![deny(missing_docs)]
+#![forbid(missing_docs)]
 
 pub mod config;
 pub mod protocols;

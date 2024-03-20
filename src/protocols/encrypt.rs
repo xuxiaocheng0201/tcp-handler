@@ -89,10 +89,10 @@ use crate::common::*;
 
 /// Init the client side in tcp-handler encrypt protocol.
 ///
-/// Must be used in conjunction with [client_start].
+/// Must be used in conjunction with [`client_start`].
 ///
 /// # Runtime
-/// Due to call [block_in_place] internally,
+/// Due to call [`block_in_place`] internally,
 /// this function cannot be called in a `current_thread` runtime.
 ///
 /// # Arguments
@@ -127,10 +127,10 @@ pub async fn client_init<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str
 
 /// Init the server side in tcp-handler encrypt protocol.
 ///
-/// Must be used in conjunction with [server_start].
+/// Must be used in conjunction with [`server_start`].
 ///
 /// # Runtime
-/// Due to call [block_in_place] internally,
+/// Due to call [`block_in_place`] internally,
 /// this function cannot be called in a `current_thread` runtime.
 ///
 /// # Arguments
@@ -167,15 +167,15 @@ pub async fn server_init<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(stream: 
 
 /// Make sure the client side is ready to use in tcp-handler encrypt protocol.
 ///
-/// Must be used in conjunction with [client_init].
+/// Must be used in conjunction with [`client_init`].
 ///
 /// # Runtime
-/// Due to call [block_in_place] internally,
+/// Due to call [`block_in_place`] internally,
 /// this function cannot be called in a `current_thread` runtime.
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `ReadHalf`.
-///  * `last` - The return value of [client_init].
+///  * `last` - The return value of [`client_init`].
 ///
 /// # Example
 /// ```rust,no_run
@@ -209,19 +209,19 @@ pub async fn client_start<R: AsyncRead + Unpin>(stream: &mut R, last: Result<rsa
 
 /// Make sure the server side is ready to use in tcp-handler encrypt protocol.
 ///
-/// Must be used in conjunction with [server_init].
+/// Must be used in conjunction with [`server_init`].
 ///
 /// # Runtime
-/// Due to call [block_in_place] internally,
+/// Due to call [`block_in_place`] internally,
 /// this function cannot be called in a `current_thread` runtime.
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `WriteHalf`.
 ///  * `identifier` - The returned application identifier.
-/// (Should be same with the para in [server_init].)
+/// (Should be same with the para in [`server_init`].)
 ///  * `version` - The returned recommended application version.
-/// (Should be passed the prediction in [server_init].)
-///  * `last` - The return value of [server_init].
+/// (Should be passed the prediction in [`server_init`].)
+///  * `last` - The return value of [`server_init`].
 ///
 /// # Example
 /// ```rust,no_run
@@ -262,13 +262,13 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
 /// Send the message in encrypt tcp-handler protocol.
 ///
 /// # Runtime
-/// Due to call [block_in_place] internally,
+/// Due to call [`block_in_place`] internally,
 /// this function cannot be called in a `current_thread` runtime.
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `WriteHalf`.
 ///  * `message` - The message to send.
-///  * `cipher` - The cipher returned from [server_start] or [client_start].
+///  * `cipher` - The cipher returned from [`server_start`] or [`client_start`].
 ///
 /// # Example
 /// ```rust,no_run
@@ -315,12 +315,12 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 /// Recv the message in encrypt tcp-handler protocol.
 ///
 /// # Runtime
-/// Due to call [block_in_place] internally,
+/// Due to call [`block_in_place`] internally,
 /// this function cannot be called in a `current_thread` runtime.
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `ReadHalf`.
-///  * `cipher` - The cipher returned from [server_start] or [client_start].
+///  * `cipher` - The cipher returned from [`server_start`] or [`client_start`].
 ///
 /// # Example
 /// ```rust,no_run
