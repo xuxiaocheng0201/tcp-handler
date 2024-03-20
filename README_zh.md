@@ -25,7 +25,8 @@
 
 * 基于 [tokio](https://crates.io/crates/tokio) 和 [bytes](https://crates.io/crates/bytes) 库。
 * 支持 `tokio::net::TcpStream` 的 `ReadHalf` 和 `WriteHalf`。
-* 支持 `bytes::Buf`，故可以发送使用 `chain` 连接的非连续内存中的多个数据块。
+  （事实上只需要 `AsyncRead`/`AsyncWrite` 和 `Unpin` 就行）
+* 支持 `bytes::Buf`，故可以发送使用 `chain` 连接的储存在非连续内存中的数据块。
 * 支持加密（[rsa](https://crates.io/crates/rsa) 和 [aes](https://crates.io/crates/aes-gcm)）。
 * 支持压缩（[flate2](https://crates.io/crates/flate2)）。
 * 完整的 [API文档](https://docs.rs/tcp-handler/) 和数据模型。

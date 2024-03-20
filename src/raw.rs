@@ -41,13 +41,22 @@
 //! }
 //! ```
 //!
-//! This process is like this:
+//! The send process:
 //! ```text
 //!         ┌────┬────────┬────────────┐ (It may not be in contiguous memory.)
 //! in  --> │ ** │ ****** │ ********** │
 //!         └────┴────────┴────────────┘
 //!           │
 //!           │─ Directly send packet
+//! out <--  ─┘
+//! ```
+//! The recv process:
+//! ```text
+//!         ┌────────────────────┐ (Packet data.)
+//! in  --> │ ****************** │
+//!         └────────────────────┘
+//!           │
+//!           │─ Directly recv packet
 //! out <--  ─┘
 //! ```
 
@@ -165,9 +174,9 @@ pub async fn client_start<R: AsyncRead + Unpin>(stream: &mut R, last: Result<(),
 ///     let server = TcpListener::bind("localhost:25564").await?;
 ///     let (mut server, _) = server.accept().await?;
 ///     let s_init = server_init(&mut server, "test", |v| v == "0").await;
-///     let (procotol_version, client_version) = server_start(&mut server, "test", "0", s_init).await?;
+///     let (protocol_version, client_version) = server_start(&mut server, "test", "0", s_init).await?;
 ///     // Now the server is ready to use.
-///     # let _ = procotol_version;
+///     # let _ = protocol_version;
 ///     # let _ = client_version;
 ///     Ok(())
 /// }
@@ -230,6 +239,7 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 /// #     server_start(&mut server, "test", "0", s_init).await?;
 /// let mut reader = recv(&mut server).await?.reader();
 /// let message = reader.read_string()?;
+/// #     let _ = message;
 /// #     Ok(())
 /// # }
 /// ```
@@ -241,7 +251,7 @@ pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R) -> Result<impl Buf + Sen
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use bytes::{Buf, BufMut, BytesMut};
+    use bytes::{BufMut, BytesMut};
     use variable_len_reader::{VariableReader, VariableWriter};
     use crate::common::tests::create;
     use crate::raw::*;

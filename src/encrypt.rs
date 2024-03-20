@@ -16,73 +16,86 @@
 //!     let mut client = TcpStream::connect(server.local_addr()?).await?;
 //!     let (mut server, _) = server.accept().await?;
 //!
-//!     let c_init = client_init(&mut client, &"test", &"0").await;
-//!     let s_init = server_init(&mut server, &"test", |v| v == "0").await;
-//!     let mut s_cipher = server_start(&mut server, s_init).await?;
-//!     let mut c_cipher = client_start(&mut client, c_init).await?;
+//!     let c_init = client_init(&mut client, "test", "0").await;
+//!     let s_init = server_init(&mut server, "test", |v| v == "0").await;
+//!     let (s_cipher, protocol_version, client_version) = server_start(&mut server, "test", "0", s_init).await?;
+//!     let c_cipher = client_start(&mut client, c_init).await?;
+//!     # let _ = protocol_version;
+//!     # let _ = client_version;
 //!
 //!     let mut writer = BytesMut::new().writer();
 //!     writer.write_string("hello server.")?;
 //!     let mut bytes = writer.into_inner();
-//!     c_cipher = send(&mut client, &mut bytes, c_cipher).await?;
+//!     send(&mut client, &mut bytes, &c_cipher).await?;
 //!
-//!     let (reader, s) = recv(&mut server, s_cipher).await?;
-//!     let mut reader = reader.reader(); s_cipher = s;
+//!     let mut reader = recv(&mut server, &s_cipher).await?.reader();
 //!     let message = reader.read_string()?;
 //!     assert_eq!("hello server.", message);
 //!
 //!     let mut writer = BytesMut::new().writer();
 //!     writer.write_string("hello client.")?;
 //!     let mut bytes = writer.into_inner();
-//!     s_cipher = send(&mut server, &mut bytes, s_cipher).await?;
+//!     send(&mut server, &mut bytes, &s_cipher).await?;
 //!
-//!     let (reader, c) = recv(&mut client, c_cipher).await?;
-//!     let mut reader = reader.reader(); c_cipher = c;
+//!     let mut reader = recv(&mut client, &c_cipher).await?.reader();
 //!     let message = reader.read_string()?;
 //!     assert_eq!("hello client.", message);
 //!
-//!     # let _ = s_cipher;
-//!     # let _ = c_cipher;
 //!     Ok(())
 //! }
 //! ```
 //!
-//! This protocol is like this:
+//! The send process:
 //! ```text
-//!         ┌────┬────────┬────────────┐ (It may not be in contiguous memory.)
-//! in  --> │ ** │ ****** │ ********** │
-//!         └────┴────────┴────────────┘
-//!           Nonce│
-//!           │    │─ Copy once.
-//!           v    v
-//!         ┌────┬────────────────────┐ (In contiguous memory.)
-//!         │ ** │ ****************** │
-//!         └────┴────────────────────┘
+//!         ┌─────┬────────┬────────────┐ (It may not be in contiguous memory.)
+//! in  --> │ *** │ ****** │ ********** │
+//!         └─────┴────────┴────────────┘
+//!           └─────┐
+//!          +Nonce │
+//!           │     │─ Copy once.
+//!           v     v
+//!         ┌─────┬─────────────────────┐ (In contiguous memory.)
+//!         │ *** │ ******************* │
+//!         └─────┴─────────────────────┘
 //!           │
 //!           │─ Encrypt in-place
 //!           v
-//!         ┌────────────────────┐ (Encrypted bytes.)
-//! out <-- │ ****************** │
-//!         └────────────────────┘
+//!         ┌─────────────────────────┐ (Encrypted bytes.)
+//! out <-- │ *********************** │
+//!         └─────────────────────────┘
+//! ```
+//! The recv process:
+//! ```text
+//!         ┌─────────────────────────┐ (Packet data.)
+//! in  --> │ *********************** │
+//!         └─────────────────────────┘
+//!          -Nonce │
+//!           │     │─ Copy once.
+//!           v     v
+//!         ┌─────┬─────────────────────┐ (In contiguous memory.)
+//!         │ *** │ ******************* │
+//!         └─────┴─────────────────────┘
+//!           ┌─────┘
+//!           │─ Decrypt in-place
+//!           v
+//!         ┌─────────────────────┐ (Decrypted bytes.)
+//! out <-- │ ******************* │
+//!         └─────────────────────┘
 //! ```
 
-use aead::AeadInPlace;
-use aead::consts::U16;
-use aead::generic_array::typenum::Unsigned;
-use aes_gcm::{AeadCore, Aes256Gcm, KeyInit, Nonce};
-use aes_gcm::aead::rand_core::OsRng as AesRng;
 use bytes::{Buf, BufMut, BytesMut};
-use rsa::{Oaep, RsaPrivateKey, RsaPublicKey};
-use rsa::rand_core::OsRng as RsaRng;
-use rsa::traits::PublicKeyParts;
-use sha2::Sha512;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use variable_len_reader::{VariableReadable, VariableReader, VariableWritable, VariableWriter};
-use crate::common::{AesCipher, PacketError, read_head, read_last, read_packet, StarterError, write_head, write_last, write_packet};
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::task::block_in_place;
+use variable_len_reader::{AsyncVariableReader, AsyncVariableWriter};
+use crate::common::*;
 
 /// Init the client side in tcp-handler encrypt protocol.
 ///
-/// Must be used in conjunction with `tcp_handler::encrypt::client_start`.
+/// Must be used in conjunction with [client_start].
+///
+/// # Runtime
+/// Due to call [block_in_place] internally,
+/// this function cannot be called in a `current_thread` runtime.
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `WriteHalf`.
@@ -98,25 +111,34 @@ use crate::common::{AesCipher, PacketError, read_head, read_last, read_packet, S
 /// #[tokio::main]
 /// async fn main() -> Result<()> {
 ///     let mut client = TcpStream::connect("localhost:25564").await?;
-///     let c_init = client_init(&mut client, &"test", &"0").await;
+///     let c_init = client_init(&mut client, "test", "0").await;
 ///     let cipher = client_start(&mut client, c_init).await?;
 ///     // Now the client is ready to use.
 ///     # let _ = cipher;
 ///     Ok(())
 /// }
 /// ```
-pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identifier: &str, version: &str) -> Result<RsaPrivateKey, StarterError> {
-    let key = RsaPrivateKey::new(&mut RsaRng, 2048)?;
-    let mut writer = write_head(stream, identifier, version, false, true).await?;
-    writer.write_u8_vec(&key.n().to_bytes_le())?;
-    writer.write_u8_vec(&key.e().to_bytes_le())?;
-    write_packet(stream, &mut writer.into_inner()).await?;
+pub async fn client_init<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str, version: &str) -> Result<rsa::RsaPrivateKey, StarterError> {
+    let (key, n, e) = block_in_place(|| {
+        use rsa::traits::PublicKeyParts;
+        let key = rsa::RsaPrivateKey::new(&mut rand::thread_rng(), 2048)?;
+        let n = key.n().to_bytes_le();
+        let e = key.e().to_bytes_le();
+        Ok::<_, StarterError>((key, n, e))
+    })?;
+    write_head(stream, ProtocolVariant::Encryption, identifier, version).await?;
+    write_u8_vec(stream, &n).await?;
+    write_u8_vec(stream, &e).await?;
     Ok(key)
 }
 
 /// Init the server side in tcp-handler encrypt protocol.
 ///
-/// Must be used in conjunction with `tcp_handler::encrypt::server_start`.
+/// Must be used in conjunction with [server_start].
+///
+/// # Runtime
+/// Due to call [block_in_place] internally,
+/// this function cannot be called in a `current_thread` runtime.
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `ReadHalf`.
@@ -133,91 +155,38 @@ pub async fn client_init<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, identi
 /// async fn main() -> Result<()> {
 ///     let server = TcpListener::bind("localhost:25564").await?;
 ///     let (mut server, _) = server.accept().await?;
-///     let s_init = server_init(&mut server, &"test", |v| v == "0").await;
-///     let cipher = server_start(&mut server, s_init).await?;
+///     let s_init = server_init(&mut server, "test", |v| v == "0").await;
+///     let (cipher, protocol_version, client_version) = server_start(&mut server, "test", "0", s_init).await?;
 ///     // Now the server is ready to use.
 ///     # let _ = cipher;
+///     # let _ = protocol_version;
+///     # let _ = client_version;
 ///     Ok(())
 /// }
 /// ```
-///
-/// You can get the client version from this function:
-/// ```rust,no_run
-/// use anyhow::Result;
-/// use tcp_handler::encrypt::{server_init, server_start};
-/// use tokio::net::TcpListener;
-///
-/// #[tokio::main]
-/// async fn main() -> Result<()> {
-///     let server = TcpListener::bind("localhost:25564").await?;
-///     let (mut server, _) = server.accept().await?;
-///     let mut version = None;
-///     let s_init = server_init(&mut server, &"test", |v| {
-///         version = Some(v.to_string());
-///         v == "0"
-///     }).await;
-///     let cipher = server_start(&mut server, s_init).await?;
-///     let version = version.unwrap();
-///     // Now the version is got.
-///     # let _ = cipher;
-///     # let _ = version;
-///     Ok(())
-/// }
-/// ```
-pub async fn server_init<R: AsyncReadExt + Unpin + Send, P: FnOnce(&str) -> bool>(stream: &mut R, identifier: &str, version: P) -> Result<RsaPublicKey, StarterError> {
-    let mut reader = read_head(stream, identifier, version, false, true).await?;
-    let n = rsa::BigUint::from_bytes_le(&reader.read_u8_vec()?);
-    let e = rsa::BigUint::from_bytes_le(&reader.read_u8_vec()?);
-    let key = RsaPublicKey::new(n, e)?;
-    Ok(key)
-}
-
-/// Make sure the server side is ready to use in tcp-handler encrypt protocol.
-///
-/// Must be used in conjunction with `tcp_handler::encrypt::server_init`.
-///
-/// # Arguments
-///  * `stream` - The tcp stream or `WriteHalf`.
-///  * `last` - The return value of `tcp_handler::encrypt::server_init`.
-///
-/// # Example
-/// ```rust,no_run
-/// use anyhow::Result;
-/// use tcp_handler::encrypt::{server_init, server_start};
-/// use tokio::net::TcpListener;
-///
-/// #[tokio::main]
-/// async fn main() -> Result<()> {
-///     let server = TcpListener::bind("localhost:25564").await?;
-///     let (mut server, _) = server.accept().await?;
-///     let s_init = server_init(&mut server, &"test", |v| v == "0").await;
-///     let cipher = server_start(&mut server, s_init).await?;
-///     // Now the server is ready to use.
-///     # let _ = cipher;
-///     Ok(())
-/// }
-/// ```
-pub async fn server_start<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, last: Result<RsaPublicKey, StarterError>) -> Result<AesCipher, StarterError> {
-    let rsa = write_last(stream, last).await?;
-    let aes = Aes256Gcm::generate_key(&mut AesRng);
-    let nonce = Aes256Gcm::generate_nonce(&mut AesRng);
-    debug_assert_eq!(12, nonce.len());
-    let encrypted_aes = rsa.encrypt(&mut RsaRng, Oaep::new::<Sha512>(), &aes)?;
-    let cipher = Aes256Gcm::new(&aes);
-    let mut writer = BytesMut::new().writer();
-    writer.write_u8_vec(&encrypted_aes)?;
-    writer.write_more(&nonce)?;
-    write_packet(stream, &mut writer.into_inner()).await?;
-    Ok((cipher, nonce))
+pub async fn server_init<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(stream: &mut R, identifier: &str, version: P) -> Result<((u16, String), rsa::RsaPublicKey), StarterError> {
+    let versions = read_head(stream, ProtocolVariant::Encryption, identifier, version).await?;
+    let n = read_u8_vec(stream).await?;
+    let e = read_u8_vec(stream).await?;
+    let key = block_in_place(move || {
+        let n = rsa::BigUint::from_bytes_le(&n);
+        let e = rsa::BigUint::from_bytes_le(&e);
+        rsa::RsaPublicKey::new(n, e)
+    })?;
+    Ok((versions, key))
 }
 
 /// Make sure the client side is ready to use in tcp-handler encrypt protocol.
 ///
-/// Must be used in conjunction with `tcp_handler::encrypt::client_init`.
+/// Must be used in conjunction with [client_init].
+///
+/// # Runtime
+/// Due to call [block_in_place] internally,
+/// this function cannot be called in a `current_thread` runtime.
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `ReadHalf`.
-///  * `last` - The return value of `tcp_handler::encrypt::client_init`.
+///  * `last` - The return value of [client_init].
 ///
 /// # Example
 /// ```rust,no_run
@@ -228,31 +197,83 @@ pub async fn server_start<W: AsyncWriteExt + Unpin + Send>(stream: &mut W, last:
 /// #[tokio::main]
 /// async fn main() -> Result<()> {
 ///     let mut client = TcpStream::connect("localhost:25564").await?;
-///     let c_init = client_init(&mut client, &"test", &"0").await;
+///     let c_init = client_init(&mut client, "test", "0").await;
 ///     let cipher = client_start(&mut client, c_init).await?;
-///     // Now the client is ready to use.
+///     // Now the client and cipher are ready to use.
 ///     # let _ = cipher;
 ///     Ok(())
 /// }
 /// ```
-pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: Result<RsaPrivateKey, StarterError>) -> Result<AesCipher, StarterError> {
+pub async fn client_start<R: AsyncRead + Unpin>(stream: &mut R, last: Result<rsa::RsaPrivateKey, StarterError>) -> Result<Cipher, StarterError> {
     let rsa = read_last(stream, last).await?;
-    let mut reader = read_packet(stream).await?.reader();
-    let encrypted_aes = reader.read_u8_vec()?;
+    let encrypted_aes = read_u8_vec(stream).await?;
     let mut nonce = [0; 12];
-    reader.read_more(&mut nonce)?;
-    let aes = rsa.decrypt(Oaep::new::<Sha512>(), &encrypted_aes)?;
-    let cipher = Aes256Gcm::new_from_slice(&aes)?;
-    let nonce = Nonce::from(nonce);
-    Ok((cipher, nonce))
+    stream.read_more(&mut nonce).await?;
+    let cipher = block_in_place(move || {
+        use aes_gcm::aead::KeyInit;
+        let aes = rsa.decrypt(rsa::Oaep::new::<rsa::sha2::Sha512>(), &encrypted_aes)?;
+        let cipher = aes_gcm::Aes256Gcm::new_from_slice(&aes).unwrap();
+        Ok::<_, StarterError>((cipher, aes_gcm::Nonce::from(nonce)))
+    })?;
+    Ok(Cipher::new(cipher))
 }
 
-/// Send message in encrypt tcp-handler protocol.
+/// Make sure the server side is ready to use in tcp-handler encrypt protocol.
 ///
-/// You may use some crate to read and write data,
-/// such as [`serde`](https://crates.io/crates/serde),
-/// [`postcard`](https://crates.io/crates/postcard) and
-/// [`variable-len-reader`](https://crates.io/crates/variable-len-reader).
+/// Must be used in conjunction with [server_init].
+///
+/// # Runtime
+/// Due to call [block_in_place] internally,
+/// this function cannot be called in a `current_thread` runtime.
+///
+/// # Arguments
+///  * `stream` - The tcp stream or `WriteHalf`.
+///  * `identifier` - The returned application identifier.
+/// (Should be same with the para in [server_init].)
+///  * `version` - The returned recommended application version.
+/// (Should be passed the prediction in [server_init].)
+///  * `last` - The return value of [server_init].
+///
+/// # Example
+/// ```rust,no_run
+/// use anyhow::Result;
+/// use tcp_handler::encrypt::{server_init, server_start};
+/// use tokio::net::TcpListener;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<()> {
+///     let server = TcpListener::bind("localhost:25564").await?;
+///     let (mut server, _) = server.accept().await?;
+///     let s_init = server_init(&mut server, "test", |v| v == "0").await;
+///     let (cipher, protocol_version, client_version) = server_start(&mut server, "test", "0", s_init).await?;
+///     // Now the server is ready to use.
+///     # let _ = cipher;
+///     # let _ = protocol_version;
+///     # let _ = client_version;
+///     Ok(())
+/// }
+/// ```
+pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str, version: &str, last: Result<((u16, String), rsa::RsaPublicKey), StarterError>) -> Result<(Cipher, u16, String), StarterError> {
+    let ((va, vb), rsa) = write_last(stream, ProtocolVariant::Encryption, identifier, version, last).await?;
+    let (cipher, nonce, encrypted_aes) = block_in_place(move || {
+        use aes_gcm::aead::{KeyInit, AeadCore};
+        let aes = aes_gcm::Aes256Gcm::generate_key(&mut rand::thread_rng());
+        let nonce = aes_gcm::Aes256Gcm::generate_nonce(&mut rand::thread_rng());
+        debug_assert_eq!(12, nonce.len());
+        let encrypted_aes = rsa.encrypt(&mut rand::thread_rng(), rsa::oaep::Oaep::new::<rsa::sha2::Sha512>(), &aes)?;
+        let cipher = aes_gcm::Aes256Gcm::new(&aes);
+        Ok::<_, StarterError>((cipher, nonce, encrypted_aes))
+    })?;
+    write_u8_vec(stream, &encrypted_aes).await?;
+    stream.write_more(&nonce).await?;
+    Ok((Cipher::new((cipher, nonce)), va, vb))
+}
+
+/// Send the message in encrypt tcp-handler protocol.
+///
+/// # Runtime
+/// Due to call [block_in_place] internally,
+/// this function cannot be called in a `current_thread` runtime.
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `WriteHalf`.
@@ -260,124 +281,126 @@ pub async fn client_start<R: AsyncReadExt + Unpin + Send>(stream: &mut R, last: 
 ///
 /// # Example
 /// ```rust,no_run
-/// use anyhow::Result;
-/// use bytes::{BufMut, BytesMut};
-/// use tcp_handler::encrypt::{client_init, client_start, send};
-/// use tokio::net::TcpStream;
-/// use variable_len_reader::VariableWriter;
+/// # use anyhow::Result;
+/// # use bytes::{BufMut, BytesMut};
+/// # use tcp_handler::encrypt::{client_init, client_start};
+/// use tcp_handler::encrypt::send;
+/// # use tokio::net::TcpStream;
+/// # use variable_len_reader::VariableWriter;
 ///
-/// #[tokio::main]
-/// async fn main() -> Result<()> {
-///     let mut client = TcpStream::connect("localhost:25564").await?;
-///     let c_init = client_init(&mut client, &"test", &"0").await;
-///     let mut cipher = client_start(&mut client, c_init).await?;
-///
-///     let mut writer = BytesMut::new().writer();
-///     writer.write_string("hello server.")?;
-///     cipher = send(&mut client, &mut writer.into_inner(), cipher).await?;
-///
-///     # let _ = cipher;
-///     Ok(())
-/// }
+/// # #[tokio::main]
+/// # async fn main() -> Result<()> {
+/// #     let mut client = TcpStream::connect("localhost:25564").await?;
+/// #     let c_init = client_init(&mut client, "test", "0").await;
+/// #     let cipher = client_start(&mut client, c_init).await?;
+/// let mut writer = BytesMut::new().writer();
+/// writer.write_string("hello server.")?;
+/// send(&mut client, &mut writer.into_inner(), &cipher).await?;
+/// #     Ok(())
+/// # }
 /// ```
-pub async fn send<W: AsyncWriteExt + Unpin + Send, B: Buf>(stream: &mut W, message: &mut B, cipher: AesCipher) -> Result<AesCipher, PacketError> {
-    let (cipher, nonce) = cipher;
-    let new_nonce = Aes256Gcm::generate_nonce(&mut AesRng);
-    debug_assert_eq!(12, nonce.len());
-    let mut bytes = BytesMut::with_capacity(12 + message.remaining() + U16::to_usize());
-    bytes.extend_from_slice(new_nonce.as_slice());
-    while message.has_remaining() {
-        let chunk = message.chunk();
-        bytes.extend_from_slice(chunk);
-        message.advance(chunk.len());
-    }
-    cipher.encrypt_in_place(&nonce, &[], &mut bytes)?;
-    write_packet(stream, &mut bytes).await?;
-    Ok((cipher, new_nonce))
+pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B, cipher: &Cipher) -> Result<(), PacketError> {
+    let mut bytes = block_in_place(|| {
+        use aes_gcm::aead::{AeadCore, AeadMutInPlace};
+        use aes_gcm::aes::cipher::Unsigned;
+        use variable_len_reader::synchronous::VariableWritable;
+        let new_nonce = aes_gcm::Aes256Gcm::generate_nonce(&mut rand::thread_rng());
+        debug_assert_eq!(12, new_nonce.len());
+        let mut bytes = BytesMut::with_capacity(12 + message.remaining() + aes_gcm::aead::consts::U12::to_usize());
+        bytes.extend_from_slice(&new_nonce);
+        let mut writer = bytes.writer();
+        writer.write_more_buf(message)?;
+        let mut bytes = writer.into_inner();
+        let ((mut cipher, nonce), lock) = Cipher::get(cipher)?;
+        cipher.encrypt_in_place(&nonce, &[], &mut bytes)?;
+        Cipher::reset(lock, (cipher, new_nonce));
+        Ok::<_, PacketError>(bytes)
+    })?;
+    write_packet(stream, &mut bytes).await
 }
 
-/// Recv message in encrypt tcp-handler protocol.
+/// Recv the message in encrypt tcp-handler protocol.
 ///
-/// You may use some crate to read and write data,
-/// such as [`serde`](https://crates.io/crates/serde),
-/// [`postcard`](https://crates.io/crates/postcard) and
-/// [`variable-len-reader`](https://crates.io/crates/variable-len-reader).
+/// # Runtime
+/// Due to call [block_in_place] internally,
+/// this function cannot be called in a `current_thread` runtime.
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `ReadHalf`.
 ///
 /// # Example
 /// ```rust,no_run
-/// use anyhow::Result;
-/// use bytes::Buf;
-/// use tcp_handler::encrypt::{recv, server_init, server_start};
-/// use tokio::net::TcpListener;
-/// use variable_len_reader::VariableReader;
+/// # use anyhow::Result;
+/// # use bytes::Buf;
+/// # use tcp_handler::encrypt::{server_init, server_start};
+/// use tcp_handler::encrypt::recv;
+/// # use tokio::net::TcpListener;
+/// # use variable_len_reader::VariableReader;
 ///
-/// #[tokio::main]
-/// async fn main() -> Result<()> {
-///     let server = TcpListener::bind("localhost:25564").await?;
-///     let (mut server, _) = server.accept().await?;
-///     let s_init = server_init(&mut server, &"test", |v| v == "0").await;
-///     let mut cipher = server_start(&mut server, s_init).await?;
-///
-///     let (reader, c) = recv(&mut server, cipher).await?;
-///     let mut reader = reader.reader(); cipher = c;
-///     let _message = reader.read_string()?;
-///     Ok(())
-/// }
+/// # #[tokio::main]
+/// # async fn main() -> Result<()> {
+/// #     let server = TcpListener::bind("localhost:25564").await?;
+/// #     let (mut server, _) = server.accept().await?;
+/// #     let s_init = server_init(&mut server, "test", |v| v == "0").await;
+/// #     let (cipher, _, _) = server_start(&mut server, "test", "0", s_init).await?;
+/// let mut reader = recv(&mut server, &cipher).await?.reader();
+/// let message = reader.read_string()?;
+/// #     let _ = message;
+/// #     Ok(())
+/// # }
 /// ```
-pub async fn recv<R: AsyncReadExt + Unpin + Send>(stream: &mut R, cipher: AesCipher) -> Result<(BytesMut, AesCipher), PacketError> {
-    let (cipher, nonce) = cipher;
-    let mut message = read_packet(stream).await?;
-    cipher.decrypt_in_place(&nonce, &[], &mut message)?;
-    let mut reader = message.reader();
-    let mut new_nonce = [0; 12];
-    reader.read_more(&mut new_nonce)?;
-    Ok((reader.into_inner(), (cipher, Nonce::from(new_nonce))))
+pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R, cipher: &Cipher) -> Result<impl Buf + Send + Unpin, PacketError> {
+    let mut bytes = read_packet(stream).await?;
+    let message = block_in_place(move || {
+        use aes_gcm::aead::AeadMutInPlace;
+        use variable_len_reader::synchronous::{VariableReadable, VariableWritable};
+        let len = bytes.remaining();
+        let mut buffer = BytesMut::with_capacity(len).writer();
+        buffer.write_more_buf(&mut bytes)?; drop(bytes);
+        let mut buffer = buffer.into_inner();
+        let ((mut cipher, nonce), lock) = Cipher::get(cipher)?;
+        cipher.decrypt_in_place(&nonce, &[], &mut buffer)?;
+        let mut reader = buffer.reader();
+        let mut new_nonce = [0; 12];
+        reader.read_more(&mut new_nonce)?;
+        let new_nonce = aes_gcm::Nonce::from(new_nonce);
+        Cipher::reset(lock, (cipher, new_nonce));
+        Ok::<_, PacketError>(reader.into_inner())
+    })?;
+    Ok(message)
 }
 
-
 #[cfg(test)]
-mod test {
+mod tests {
     use anyhow::Result;
-    use bytes::{Buf, BufMut, BytesMut};
     use variable_len_reader::{VariableReader, VariableWriter};
-    use crate::encrypt::{recv, send};
-    use crate::common::test::{create, test_incorrect};
+    use crate::common::tests::create;
+    use crate::encrypt::*;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn connect() -> Result<()> {
         let (mut client, mut server) = create().await?;
-        let c = crate::encrypt::client_init(&mut client, &"a", &"1").await;
-        let s = crate::encrypt::server_init(&mut server, &"a", |v| v == "1").await;
-        let mut s_cipher = crate::encrypt::server_start(&mut server, s).await?;
-        let mut c_cipher = crate::encrypt::client_start(&mut client, c).await?;
+        let c = client_init(&mut client, "a", "1").await;
+        let s = server_init(&mut server, "a", |v| v == "1").await;
+        let (s_cipher, _, _) = server_start(&mut server, "a", "1", s).await?;
+        let c_cipher = client_start(&mut client, c).await?;
 
         let mut writer = BytesMut::new().writer();
-        writer.write_string("hello server.")?;
-        let mut bytes = writer.into_inner();
-        c_cipher = send(&mut client, &mut bytes, c_cipher).await?;
+        writer.write_string("hello server in encrypt.")?;
+        send(&mut client, &mut writer.into_inner(), &c_cipher).await?;
 
-        let (reader, s) = recv(&mut server, s_cipher).await?;
-        let mut reader = reader.reader(); s_cipher = s;
+        let mut reader = recv(&mut server, &s_cipher).await?.reader();
         let message = reader.read_string()?;
-        assert_eq!("hello server.", message);
+        assert_eq!("hello server in encrypt.", message);
 
         let mut writer = BytesMut::new().writer();
-        writer.write_string("hello client.")?;
-        let mut bytes = writer.into_inner();
-        s_cipher = send(&mut server, &mut bytes, s_cipher).await?;
+        writer.write_string("hello client in encrypt.")?;
+        send(&mut server, &mut writer.into_inner(), &s_cipher).await?;
 
-        let (reader, c) = recv(&mut client, c_cipher).await?;
-        let mut reader = reader.reader(); c_cipher = c;
+        let mut reader = recv(&mut client, &c_cipher).await?.reader();
         let message = reader.read_string()?;
-        assert_eq!("hello client.", message);
+        assert_eq!("hello client in encrypt.", message);
 
-        let _ = s_cipher;
-        let _ = c_cipher;
         Ok(())
     }
-
-    test_incorrect!(encrypt);
 }

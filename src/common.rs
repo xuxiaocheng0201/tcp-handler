@@ -77,12 +77,6 @@ pub enum StarterError {
     #[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
     #[error("During generating/encrypting/decrypting rsa key.")]
     RSA(#[from] rsa::Error),
-
-    /// During generating/encrypting/decrypting aes key.
-    #[cfg(feature = "encryption")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
-    #[error("During generating/encrypting/decrypting aes key.")]
-    AES(#[from] aes_gcm::aes::cipher::InvalidLength),
 }
 
 
@@ -139,17 +133,28 @@ impl From<ProtocolVariant> for [bool; 2] {
 }
 
 #[inline]
-async fn write_string<W: AsyncWrite + Unpin>(stream: &mut W, string: &str) -> Result<(), <W as AsyncVariableWritable>::Error> {
-    stream.write_usize_varint_ap(string.len()).await?;
-    stream.write_more(string.as_bytes()).await?;
+pub(crate) async fn write_u8_vec<W: AsyncWrite + Unpin>(stream: &mut W, vec: &[u8]) -> Result<(), <W as AsyncVariableWritable>::Error> {
+    stream.write_usize_varint_ap(vec.len()).await?;
+    stream.write_more(vec).await?;
     Ok(())
 }
 
 #[inline]
-async fn read_string<R: AsyncRead + Unpin>(stream: &mut R) -> Result<String, <R as AsyncVariableReadable>::Error> {
+pub(crate) async fn write_string<W: AsyncWrite + Unpin>(stream: &mut W, string: &str) -> Result<(), <W as AsyncVariableWritable>::Error> {
+    write_u8_vec(stream, string.as_bytes()).await
+}
+
+#[inline]
+pub(crate) async fn read_u8_vec<R: AsyncRead + Unpin>(stream: &mut R) -> Result<Vec<u8>, <R as AsyncVariableReadable>::Error> {
     let len = stream.read_usize_varint_ap().await?;
     let mut buf = vec![0; len];
     stream.read_more(&mut buf).await?;
+    Ok(buf)
+}
+
+#[inline]
+pub(crate) async fn read_string<R: AsyncRead + Unpin>(stream: &mut R) -> Result<String, <R as AsyncVariableReadable>::Error> {
+    let buf = read_u8_vec(stream).await?;
     String::from_utf8(buf).map_err(|e| R::read_string_error("ReadString", e))
 }
 
@@ -281,7 +286,7 @@ pub(crate) type InnerAesCipher = (aes_gcm::Aes256Gcm, aes_gcm::Nonce<aes_gcm::ae
 #[cfg(feature = "encryption")]
 #[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
 pub struct Cipher {
-    cipher: tokio::sync::Mutex<Option<InnerAesCipher>>,
+    cipher: std::sync::Mutex<Option<InnerAesCipher>>,
 }
 
 #[cfg(feature = "encryption")]
@@ -297,20 +302,22 @@ impl std::fmt::Debug for Cipher {
 
 #[cfg(feature = "encryption")]
 impl Cipher {
+    #[inline]
     pub(crate) fn new(cipher: InnerAesCipher) -> Self {
         Self {
-            cipher: tokio::sync::Mutex::new(Some(cipher))
+            cipher: std::sync::Mutex::new(Some(cipher))
         }
     }
 
-    pub(crate) async fn get<'a>(&'a self) -> Result<(InnerAesCipher, tokio::sync::MutexGuard<Option<InnerAesCipher>>), PacketError> {
-        let mut guard = self.cipher.lock().await;
+    #[inline]
+    pub(crate) fn get(&self) -> Result<(InnerAesCipher, std::sync::MutexGuard<Option<InnerAesCipher>>), PacketError> {
+        let mut guard = self.cipher.lock().unwrap();
         let cipher = (*guard).take().ok_or(PacketError::Broken())?;
         Ok((cipher, guard))
     }
 
     #[inline]
-    pub(crate) fn reset(mut guard: tokio::sync::MutexGuard<Option<InnerAesCipher>>, cipher: InnerAesCipher) {
+    pub(crate) fn reset(mut guard: std::sync::MutexGuard<Option<InnerAesCipher>>, cipher: InnerAesCipher) {
         (*guard).replace(cipher);
     }
 }

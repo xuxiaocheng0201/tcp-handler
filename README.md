@@ -25,6 +25,7 @@ for conveniently building your tcp application.
 
 * Based on [tokio](https://crates.io/crates/tokio) and [bytes](https://crates.io/crates/bytes).
 * Support `ReadHalf` and `WriteHalf` of `tokio::net::TcpStream`.
+  (In fact anything impl `AsyncRead`/`AsyncWrite` and `Unpin` can be used.)
 * Support `bytes::Buf`. So you can send discontinuous data chunks by calling `chain`.
 * Support encryption ([rsa](https://crates.io/crates/rsa) and [aes](https://crates.io/crates/aes-gcm)).
 * Support compression ([flate2](https://crates.io/crates/flate2)).

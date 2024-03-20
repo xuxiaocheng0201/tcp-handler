@@ -45,7 +45,7 @@
 //! }
 //! ```
 //!
-//! This process is like this:
+//! The send process:
 //! ```text
 //!         ┌────┬────────┬────────────┐ (It may not be in contiguous memory.)
 //! in  --> │ ** │ ****** │ ********** │
@@ -53,7 +53,19 @@
 //!           │
 //!           │─ DeflateEncoder
 //!           v
-//!         ┌────────────────────┐ (Compressed bytes. In contiguous memory.)
+//!         ┌──────────────────┐ (Compressed bytes. In contiguous memory.)
+//! out <-- │ **************** │
+//!         └──────────────────┘
+//! ```
+//! The recv process:
+//! ```text
+//!         ┌──────────────────┐ (Packet data.)
+//! in  --> │ **************** │
+//!         └──────────────────┘
+//!           │
+//!           │─ DeflateDecoder
+//!           v
+//!         ┌────────────────────┐ (Decompressed bytes.)
 //! out <-- │ ****************** │
 //!         └────────────────────┘
 //! ```
@@ -127,11 +139,11 @@ pub async fn server_init<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(stream: 
 
 /// Make sure the client side is ready to use in tcp-handler compress protocol.
 ///
-/// Must be used in conjunction with [crate::raw::client_init].
+/// Must be used in conjunction with [client_init].
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `ReadHalf`.
-///  * `last` - The return value of [crate::raw::client_init].
+///  * `last` - The return value of [client_init].
 ///
 /// # Example
 /// ```rust,no_run
@@ -160,10 +172,10 @@ pub async fn client_start<R: AsyncRead + Unpin>(stream: &mut R, last: Result<(),
 /// # Arguments
 ///  * `stream` - The tcp stream or `WriteHalf`.
 ///  * `identifier` - The returned application identifier.
-/// (Should be same with the para in [crate::raw::server_init].)
+/// (Should be same with the para in [server_init].)
 ///  * `version` - The returned recommended application version.
-/// (Should be passed the prediction in [crate::raw::server_init].)
-///  * `last` - The return value of [crate::raw::server_init].
+/// (Should be passed the prediction in [server_init].)
+///  * `last` - The return value of [server_init].
 ///
 /// # Example
 /// ```rust,no_run
@@ -176,9 +188,9 @@ pub async fn client_start<R: AsyncRead + Unpin>(stream: &mut R, last: Result<(),
 ///     let server = TcpListener::bind("localhost:25564").await?;
 ///     let (mut server, _) = server.accept().await?;
 ///     let s_init = server_init(&mut server, "test", |v| v == "0").await;
-///     let (procotol_version, client_version) = server_start(&mut server, "test", "0", s_init).await?;
+///     let (protocol_version, client_version) = server_start(&mut server, "test", "0", s_init).await?;
 ///     // Now the server is ready to use.
-///     # let _ = procotol_version;
+///     # let _ = protocol_version;
 ///     # let _ = client_version;
 ///     Ok(())
 /// }
@@ -191,7 +203,7 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
 /// Send the message in compress tcp-handler protocol.
 ///
 /// # Runtime
-/// Due to call [tokio::task::block_in_place] internally,
+/// Due to call [block_in_place] internally,
 /// this function cannot be called in a `current_thread` runtime.
 ///
 /// # Arguments
@@ -230,6 +242,10 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 
 /// Recv the message in compress tcp-handler protocol.
 ///
+/// # Runtime
+/// Due to call [block_in_place] internally,
+/// this function cannot be called in a `current_thread` runtime.
+///
 /// # Arguments
 ///  * `stream` - The tcp stream or `ReadHalf`.
 ///
@@ -250,21 +266,23 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 /// #     server_start(&mut server, "test", "0", s_init).await?;
 /// let mut reader = recv(&mut server).await?.reader();
 /// let message = reader.read_string()?;
+/// #     let _ = message;
 /// #     Ok(())
 /// # }
 /// ```
 pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R) -> Result<impl Buf + Send + Unpin, PacketError> {
     let mut bytes = read_packet(stream).await?;
-    let mut decoder = DeflateDecoder::new(BytesMut::new().writer());
-    decoder.write_more_buf(&mut bytes)?;
-    let message = decoder.finish()?.into_inner();
+    let message = block_in_place(move || {
+        let mut decoder = DeflateDecoder::new(BytesMut::new().writer());
+        decoder.write_more_buf(&mut bytes)?;
+        Ok::<_, PacketError>(decoder.finish()?.into_inner())
+    })?;
     Ok(message)
 }
 
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use bytes::Buf;
     use variable_len_reader::{VariableReader, VariableWriter};
     use crate::common::tests::create;
     use crate::compress::*;
