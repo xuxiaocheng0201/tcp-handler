@@ -38,7 +38,7 @@
 
 ```toml
 [dependencies]
-tcp-handler = "~0.5"
+tcp-handler = "~0.6"
 ```
 
 
@@ -169,3 +169,25 @@ async fn main() -> Result<()> {
     Ok(())
 }
 ```
+
+
+# 协议版本
+
+内部实现的协议版本。
+请注意只有当服务端和客户端的协议版本相同时，
+才可以建立正常的连接。
+
+| crate version | protocol version |
+|---------------|------------------|
+| \>=0.6.0      | 1                |
+| <0.6.0        | 0                |
+
+
+# License
+
+Licensed under either of
+
+- Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.

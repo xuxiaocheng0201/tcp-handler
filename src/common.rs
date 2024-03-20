@@ -89,10 +89,10 @@ static MAGIC_BYTES: [u8; 4] = [208, 8, 166, 104];
 
 /// The version of the tcp-handler protocol.
 ///
-/// | version code | crate version |
-/// | ------------ | ------------- |
-/// | 1            | >=0.6.0       |
-/// | 0            | <0.6.0        |
+/// | crate version | protocol version |
+/// |---------------|------------------|
+/// | \>=0.6.0      | 1                |
+/// | <0.6.0        | 0                |
 static MAGIC_VERSION: u16 = 1;
 
 /// The variants of the protocol.

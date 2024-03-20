@@ -38,7 +38,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-tcp-handler = "~0.5"
+tcp-handler = "~0.6"
 ```
 
 
@@ -170,3 +170,25 @@ async fn main() -> Result<()> {
     Ok(())
 }
 ```
+
+
+# Protocol Version
+
+The protocol version code used internally.
+Note only when the server and client sides have the same code,
+they can connect normally.
+
+| crate version | protocol version |
+|---------------|------------------|
+| \>=0.6.0      | 1                |
+| <0.6.0        | 0                |
+
+
+# License
+
+Licensed under either of
+
+- Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+
+at your option.
