@@ -324,7 +324,7 @@ impl Cipher {
 
 
 #[cfg(test)]
-pub(crate) mod tests {
+pub(super) mod tests {
     use anyhow::Result;
     use bytes::{Buf, Bytes};
     use tokio::io::{AsyncRead, AsyncWrite, duplex};

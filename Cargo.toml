@@ -42,6 +42,7 @@ compress_encryption = ["compression", "encryption", "__internal_variable_len_rea
 auto_flush = ["tokio/io-util"]
 
 streams = ["dep:async-trait"]
+stream_net = ["streams", "tokio/net"]
 
 serde = ["dep:serde"]
 
