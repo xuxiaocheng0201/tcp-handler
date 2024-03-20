@@ -15,7 +15,7 @@ pub mod compress_encrypt;
 
 use async_trait::async_trait;
 use bytes::{Buf, BytesMut};
-use crate::common::PacketError;
+use crate::protocols::common::PacketError;
 
 /// The handler trait, providing send and receive methods.
 ///

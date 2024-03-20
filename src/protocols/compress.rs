@@ -8,7 +8,7 @@
 //! ```rust
 //! use anyhow::Result;
 //! use bytes::{Buf, BufMut, BytesMut};
-//! use tcp_handler::compress::*;
+//! use tcp_handler::protocols::compress::*;
 //! use tokio::net::{TcpListener, TcpStream};
 //! use variable_len_reader::{VariableReader, VariableWriter};
 //!
@@ -74,8 +74,8 @@ use bytes::{Buf, BufMut, BytesMut};
 use flate2::write::{DeflateDecoder, DeflateEncoder};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::task::block_in_place;
-use crate::common::*;
 use crate::config::get_compression;
+use crate::protocols::common::*;
 
 /// Init the client side in tcp-handler compress protocol.
 ///
@@ -89,7 +89,7 @@ use crate::config::get_compression;
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::compress::{client_init, client_start};
+/// use tcp_handler::protocols::compress::{client_init, client_start};
 /// use tokio::net::TcpStream;
 ///
 /// #[tokio::main]
@@ -120,7 +120,7 @@ pub async fn client_init<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::compress::{server_init, server_start};
+/// use tcp_handler::protocols::compress::{server_init, server_start};
 /// use tokio::net::TcpListener;
 ///
 /// #[tokio::main]
@@ -149,7 +149,7 @@ pub async fn server_init<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(stream: 
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::compress::{client_init, client_start};
+/// use tcp_handler::protocols::compress::{client_init, client_start};
 /// use tokio::net::TcpStream;
 ///
 /// #[tokio::main]
@@ -181,7 +181,7 @@ pub async fn client_start<R: AsyncRead + Unpin>(stream: &mut R, last: Result<(),
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::compress::{server_init, server_start};
+/// use tcp_handler::protocols::compress::{server_init, server_start};
 /// use tokio::net::TcpListener;
 ///
 /// #[tokio::main]
@@ -217,8 +217,8 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
 /// ```rust,no_run
 /// # use anyhow::Result;
 /// # use bytes::{BufMut, BytesMut};
-/// # use tcp_handler::compress::{client_init, client_start};
-/// use tcp_handler::compress::send;
+/// # use tcp_handler::protocols::compress::{client_init, client_start};
+/// use tcp_handler::protocols::compress::send;
 /// # use tokio::net::TcpStream;
 /// # use variable_len_reader::VariableWriter;
 ///
@@ -259,8 +259,8 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 /// ```rust,no_run
 /// # use anyhow::Result;
 /// # use bytes::Buf;
-/// # use tcp_handler::compress::{server_init, server_start};
-/// use tcp_handler::compress::recv;
+/// # use tcp_handler::protocols::compress::{server_init, server_start};
+/// use tcp_handler::protocols::compress::recv;
 /// # use tokio::net::TcpListener;
 /// # use variable_len_reader::VariableReader;
 ///
@@ -291,8 +291,8 @@ pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R) -> Result<BytesMut, Pack
 mod tests {
     use anyhow::Result;
     use variable_len_reader::{VariableReader, VariableWriter};
-    use crate::common::tests::create;
-    use crate::compress::*;
+    use crate::protocols::common::tests::create;
+    use crate::protocols::compress::*;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn connect() -> Result<()> {

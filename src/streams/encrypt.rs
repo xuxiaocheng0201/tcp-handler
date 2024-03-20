@@ -2,8 +2,8 @@
 
 use bytes::{Buf, BytesMut};
 use tokio::io::{AsyncRead, AsyncWrite};
-use crate::common::{Cipher, PacketError, StarterError};
-use crate::encrypt::{self, send, recv};
+use crate::protocols::common::{Cipher, PacketError, StarterError};
+use crate::protocols::encrypt::{self, send, recv};
 use crate::streams::impl_tcp_handler;
 
 /// The server side `TcpHandler` of the `encrypt` protocol.

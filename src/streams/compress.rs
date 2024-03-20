@@ -2,8 +2,8 @@
 
 use bytes::{Buf, BytesMut};
 use tokio::io::{AsyncRead, AsyncWrite};
-use crate::common::{PacketError, StarterError};
-use crate::compress::{self, send, recv};
+use crate::protocols::common::{PacketError, StarterError};
+use crate::protocols::compress::{self, send, recv};
 use crate::streams::impl_tcp_handler;
 
 /// The server side `TcpHandler` of the `compress` protocol.

@@ -328,7 +328,7 @@ pub(super) mod tests {
     use anyhow::Result;
     use bytes::{Buf, Bytes};
     use tokio::io::{AsyncRead, AsyncWrite, duplex};
-    use crate::common::{read_packet, write_packet};
+    use crate::protocols::common::{read_packet, write_packet};
 
     pub(crate) async fn create() -> Result<(impl AsyncRead + AsyncWrite + Unpin, impl AsyncRead + AsyncWrite + Unpin)> {
         let (client, server) = duplex(1024);

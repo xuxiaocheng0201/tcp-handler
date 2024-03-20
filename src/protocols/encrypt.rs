@@ -6,7 +6,7 @@
 //! ```rust
 //! use anyhow::Result;
 //! use bytes::{Buf, BufMut, BytesMut};
-//! use tcp_handler::encrypt::*;
+//! use tcp_handler::protocols::encrypt::*;
 //! use tokio::net::{TcpListener, TcpStream};
 //! use variable_len_reader::{VariableReader, VariableWriter};
 //!
@@ -85,7 +85,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::task::block_in_place;
 use variable_len_reader::{AsyncVariableReader, AsyncVariableWriter};
 use variable_len_reader::helper::{AsyncReaderHelper, AsyncWriterHelper};
-use crate::common::*;
+use crate::protocols::common::*;
 
 /// Init the client side in tcp-handler encrypt protocol.
 ///
@@ -103,7 +103,7 @@ use crate::common::*;
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::encrypt::{client_init, client_start};
+/// use tcp_handler::protocols::encrypt::{client_init, client_start};
 /// use tokio::net::TcpStream;
 ///
 /// #[tokio::main]
@@ -141,7 +141,7 @@ pub async fn client_init<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::encrypt::{server_init, server_start};
+/// use tcp_handler::protocols::encrypt::{server_init, server_start};
 /// use tokio::net::TcpListener;
 ///
 /// #[tokio::main]
@@ -180,7 +180,7 @@ pub async fn server_init<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(stream: 
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::encrypt::{client_init, client_start};
+/// use tcp_handler::protocols::encrypt::{client_init, client_start};
 /// use tokio::net::TcpStream;
 ///
 /// #[tokio::main]
@@ -226,7 +226,7 @@ pub async fn client_start<R: AsyncRead + Unpin>(stream: &mut R, last: Result<rsa
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::encrypt::{server_init, server_start};
+/// use tcp_handler::protocols::encrypt::{server_init, server_start};
 /// use tokio::net::TcpListener;
 ///
 /// #[tokio::main]
@@ -274,8 +274,8 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
 /// ```rust,no_run
 /// # use anyhow::Result;
 /// # use bytes::{BufMut, BytesMut};
-/// # use tcp_handler::encrypt::{client_init, client_start};
-/// use tcp_handler::encrypt::send;
+/// # use tcp_handler::protocols::encrypt::{client_init, client_start};
+/// use tcp_handler::protocols::encrypt::send;
 /// # use tokio::net::TcpStream;
 /// # use variable_len_reader::VariableWriter;
 ///
@@ -326,8 +326,8 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 /// ```rust,no_run
 /// # use anyhow::Result;
 /// # use bytes::Buf;
-/// # use tcp_handler::encrypt::{server_init, server_start};
-/// use tcp_handler::encrypt::recv;
+/// # use tcp_handler::protocols::encrypt::{server_init, server_start};
+/// use tcp_handler::protocols::encrypt::recv;
 /// # use tokio::net::TcpListener;
 /// # use variable_len_reader::VariableReader;
 ///
@@ -364,8 +364,8 @@ pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R, cipher: &Cipher) -> Resu
 mod tests {
     use anyhow::Result;
     use variable_len_reader::{VariableReader, VariableWriter};
-    use crate::common::tests::create;
-    use crate::encrypt::*;
+    use crate::protocols::common::tests::create;
+    use crate::protocols::encrypt::*;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn connect() -> Result<()> {

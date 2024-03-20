@@ -62,7 +62,7 @@ opt-level = 3 # 加快rsa密钥生成
 ```rust
 use anyhow::Result;
 use bytes::{Buf, BufMut, BytesMut};
-use tcp_handler::raw::{client_init, client_start, recv, send, server_init, server_start};
+use tcp_handler::protocols::raw::{client_init, client_start, recv, send, server_init, server_start};
 use tokio::net::{TcpListener, TcpStream};
 use variable_len_reader::{VariableReader, VariableWriter};
 
@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
 ```rust
 use anyhow::Result;
 use bytes::{Buf, BufMut, BytesMut};
-use tcp_handler::encrypt::{client_init, client_start, recv, send, server_init, server_start};
+use tcp_handler::protocols::encrypt::{client_init, client_start, recv, send, server_init, server_start};
 use tokio::net::{TcpListener, TcpStream};
 use variable_len_reader::{VariableReader, VariableWriter};
 
@@ -147,7 +147,7 @@ async fn main() -> Result<()> {
 ```rust
 use anyhow::Result;
 use bytes::{Buf, Bytes};
-use tcp_handler::raw::{client_init, client_start, recv, send, server_init, server_start};
+use tcp_handler::protocols::raw::{client_init, client_start, recv, send, server_init, server_start};
 use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]

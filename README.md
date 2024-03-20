@@ -62,7 +62,7 @@ Directly transfer data. Without encryption and compression:
 ```rust
 use anyhow::Result;
 use bytes::{Buf, BufMut, BytesMut};
-use tcp_handler::raw::{client_init, client_start, recv, send, server_init, server_start};
+use tcp_handler::protocols::raw::{client_init, client_start, recv, send, server_init, server_start};
 use tokio::net::{TcpListener, TcpStream};
 use variable_len_reader::{VariableReader, VariableWriter};
 
@@ -98,7 +98,7 @@ Transfer message with encrypted protocol:
 ```rust
 use anyhow::Result;
 use bytes::{Buf, BufMut, BytesMut};
-use tcp_handler::encrypt::{client_init, client_start, recv, send, server_init, server_start};
+use tcp_handler::protocols::encrypt::{client_init, client_start, recv, send, server_init, server_start};
 use tokio::net::{TcpListener, TcpStream};
 use variable_len_reader::{VariableReader, VariableWriter};
 
@@ -148,7 +148,7 @@ Send discontinuous data chunks:
 ```rust
 use anyhow::Result;
 use bytes::{Buf, Bytes};
-use tcp_handler::raw::{client_init, client_start, recv, send, server_init, server_start};
+use tcp_handler::protocols::raw::{client_init, client_start, recv, send, server_init, server_start};
 use tokio::net::{TcpListener, TcpStream};
 
 #[tokio::main]

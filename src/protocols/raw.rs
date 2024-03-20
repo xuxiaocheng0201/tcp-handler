@@ -6,7 +6,7 @@
 //! ```rust
 //! use anyhow::Result;
 //! use bytes::{Buf, BufMut, BytesMut};
-//! use tcp_handler::raw::*;
+//! use tcp_handler::protocols::raw::*;
 //! use tokio::net::{TcpListener, TcpStream};
 //! use variable_len_reader::{VariableReader, VariableWriter};
 //!
@@ -62,7 +62,7 @@
 
 use bytes::{Buf, BytesMut};
 use tokio::io::{AsyncRead, AsyncWrite};
-use crate::common::*;
+use crate::protocols::common::*;
 
 /// Init the client side in tcp-handler raw protocol.
 ///
@@ -76,7 +76,7 @@ use crate::common::*;
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::raw::{client_init, client_start};
+/// use tcp_handler::protocols::raw::{client_init, client_start};
 /// use tokio::net::TcpStream;
 ///
 /// #[tokio::main]
@@ -107,7 +107,7 @@ pub async fn client_init<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::raw::{server_init, server_start};
+/// use tcp_handler::protocols::raw::{server_init, server_start};
 /// use tokio::net::TcpListener;
 ///
 /// #[tokio::main]
@@ -136,7 +136,7 @@ pub async fn server_init<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(stream: 
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::raw::{client_init, client_start};
+/// use tcp_handler::protocols::raw::{client_init, client_start};
 /// use tokio::net::TcpStream;
 ///
 /// #[tokio::main]
@@ -168,7 +168,7 @@ pub async fn client_start<R: AsyncRead + Unpin>(stream: &mut R, last: Result<(),
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::raw::{server_init, server_start};
+/// use tcp_handler::protocols::raw::{server_init, server_start};
 /// use tokio::net::TcpListener;
 ///
 /// #[tokio::main]
@@ -200,8 +200,8 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
 /// ```rust,no_run
 /// # use anyhow::Result;
 /// # use bytes::{BufMut, BytesMut};
-/// # use tcp_handler::raw::{client_init, client_start};
-/// use tcp_handler::raw::send;
+/// # use tcp_handler::protocols::raw::{client_init, client_start};
+/// use tcp_handler::protocols::raw::send;
 /// # use tokio::net::TcpStream;
 /// # use variable_len_reader::VariableWriter;
 ///
@@ -232,8 +232,8 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 /// ```rust,no_run
 /// # use anyhow::Result;
 /// # use bytes::Buf;
-/// # use tcp_handler::raw::{server_init, server_start};
-/// use tcp_handler::raw::recv;
+/// # use tcp_handler::protocols::raw::{server_init, server_start};
+/// use tcp_handler::protocols::raw::recv;
 /// # use tokio::net::TcpListener;
 /// # use variable_len_reader::VariableReader;
 ///
@@ -259,8 +259,8 @@ mod tests {
     use anyhow::Result;
     use bytes::{BufMut, BytesMut};
     use variable_len_reader::{VariableReader, VariableWriter};
-    use crate::common::tests::create;
-    use crate::raw::*;
+    use crate::protocols::common::tests::create;
+    use crate::protocols::raw::*;
 
     #[tokio::test]
     async fn connect() -> Result<()> {

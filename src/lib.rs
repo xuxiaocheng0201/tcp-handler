@@ -10,7 +10,8 @@ pub mod protocols;
 pub mod streams;
 
 
-pub use protocols::*;
+#[cfg(feature = "streams")]
+pub use streams::*;
 
 pub extern crate bytes;
 
