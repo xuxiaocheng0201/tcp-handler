@@ -303,7 +303,7 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
     let level = get_compression();
     let mut bytes = block_in_place(|| {
         use aes_gcm::aead::{AeadCore, AeadMutInPlace};
-        use variable_len_reader::synchronous::VariableWritable;
+        use variable_len_reader::VariableWritable;
         let new_nonce = aes_gcm::Aes256Gcm::generate_nonce(&mut rand::thread_rng());
         debug_assert_eq!(12, new_nonce.len());
         let mut encoder = DeflateEncoder::new(BytesMut::new().writer(), level);
@@ -353,7 +353,7 @@ pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R, cipher: &Cipher) -> Resu
     let mut bytes = read_packet(stream).await?;
     let message = block_in_place(move || {
         use aes_gcm::aead::AeadMutInPlace;
-        use variable_len_reader::synchronous::{VariableReadable, VariableWritable};
+        use variable_len_reader::{VariableReadable, VariableWritable};
             let len = bytes.remaining();
             let mut buffer = BytesMut::with_capacity(len).writer();
             buffer.write_more_buf(&mut bytes)?; drop(bytes);

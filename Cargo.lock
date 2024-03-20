@@ -726,7 +726,6 @@ dependencies = [
  "rand",
  "reportme",
  "rsa",
- "serde",
  "thiserror",
  "tokio",
  "variable-len-reader",
@@ -869,9 +868,9 @@ dependencies = [
 
 [[package]]
 name = "variable-len-reader"
-version = "3.1.1"
+version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58aa248fd3fec45adb890e8b61ab782e8a055ce45b6c7e3d3e7c486d11c64542"
+checksum = "d4f049623bd8e884b54ac4a89f8901b44ccb080a7868d31c5411ff30bec3914c"
 dependencies = [
  "bytes",
  "pin-project-lite",

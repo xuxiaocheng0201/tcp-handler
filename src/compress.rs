@@ -74,7 +74,7 @@ use bytes::{Buf, BufMut, BytesMut};
 use flate2::write::{DeflateDecoder, DeflateEncoder};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::task::block_in_place;
-use variable_len_reader::synchronous::VariableWritable;
+use variable_len_reader::VariableWritable;
 use crate::common::*;
 use crate::config::get_compression;
 

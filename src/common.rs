@@ -4,8 +4,7 @@ use std::io::{Cursor, Error};
 use bytes::Buf;
 use thiserror::Error;
 use tokio::io::{AsyncRead, AsyncWrite};
-use variable_len_reader::{AsyncVariableReader, AsyncVariableWriter};
-use variable_len_reader::asynchronous::{AsyncVariableReadable, AsyncVariableWritable};
+use variable_len_reader::{AsyncVariableReadable, AsyncVariableReader, AsyncVariableWritable, AsyncVariableWriter};
 use variable_len_reader::util::read_buf::OwnedReadBuf;
 use crate::config::get_max_packet_size;
 
