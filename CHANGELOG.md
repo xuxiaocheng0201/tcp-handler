@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+* 增加`compress_encryption`feature。
+* 增加对于recv的处理模型。
+
+### Changed
+
+* 重构协议，尽可能实现0拷贝。
+* 耗时同步代码分离，使用[tokio::task::block_in_place](https://docs.rs/tokio/1.36.0/tokio/task/fn.block_in_place.html)。
+* 简化cipher使用。
+* 移除Send标记。
+* 优化文档。
+* 更新依赖。
+
 ## [0.5.3] - 2024-1-27
 
 ### Added

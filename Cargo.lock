@@ -726,6 +726,7 @@ dependencies = [
  "rand",
  "reportme",
  "rsa",
+ "serde",
  "thiserror",
  "tokio",
  "variable-len-reader",
