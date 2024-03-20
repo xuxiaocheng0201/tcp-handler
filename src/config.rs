@@ -138,24 +138,25 @@ pub fn get_compression() -> flate2::Compression {
 
 #[cfg(test)]
 mod test {
-    use crate::config::{Config, get_max_packet_size, set_config};
+    use crate::config::*;
 
     #[test]
     fn get() {
         let _ = get_max_packet_size();
+        let _ = get_compression();
     }
 
     #[test]
     fn set() {
-        set_config(Config { max_packet_size: 1, ..Config::default() });
-        assert_eq!(1, get_max_packet_size());
+        set_config(Config { max_packet_size: 1 << 10, ..Config::default() });
+        assert_eq!(1 << 10, get_max_packet_size());
     }
 
     #[test]
     fn set_twice() {
-        set_config(Config { max_packet_size: 1, ..Config::default() });
-        assert_eq!(1, get_max_packet_size());
-        set_config(Config { max_packet_size: 2, ..Config::default() });
-        assert_eq!(2, get_max_packet_size());
+        set_config(Config { max_packet_size: 1 << 10, ..Config::default() });
+        assert_eq!(1 << 10, get_max_packet_size());
+        set_config(Config { max_packet_size: 2 << 10, ..Config::default() });
+        assert_eq!(2 << 10, get_max_packet_size());
     }
 }

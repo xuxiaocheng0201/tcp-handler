@@ -76,7 +76,7 @@ async fn main() -> Result<()> {
     // 准备 tcp-handler 协议
     let client_init = client_init(&mut client, "test", "0.0.0").await;
     let server_init = server_init(&mut server, "test", |v| v == "0.0.0").await;
-    server_start(&mut server, server_init).await?;
+    server_start(&mut server, "test", "0.0.0", server_init).await?;
     client_start(&mut client, client_init).await?;
     
     // 发送
@@ -112,27 +112,28 @@ async fn main() -> Result<()> {
     // 准备 tcp-handler 协议，并协商密钥
     let client_init = client_init(&mut client, "test", "0.0.0").await;
     let server_init = server_init(&mut server, "test", |v| v == "0.0.0").await;
-    let server_cipher = server_start(&mut server, server_init).await?;
+    let (server_cipher, _protocol_version, _client_version) =
+            server_start(&mut server, "test", "0.0.0", server_init).await?;
     let client_cipher = client_start(&mut client, client_init).await?;
     
     // 发送
     let mut writer = BytesMut::new().writer();
     writer.write_string("hello server.")?;
-    let client_cipher = send(&mut client, &mut writer.into_inner(), client_cipher).await?;
+    send(&mut client, &mut writer.into_inner(), &client_cipher).await?;
     
     // 接收
-    let (reader, server_cipher) = recv(&mut server, server_cipher).await?;
-    let message = reader.reader().read_string()?;
+    let mut reader = recv(&mut server, &server_cipher).await?.reader();
+    let message = reader.read_string()?;
     assert_eq!("hello server.", message);
     
     // 发送
     let mut writer = BytesMut::new().writer();
     writer.write_string("hello client.")?;
-    let _server_cipher = send(&mut client, &mut writer.into_inner(), server_cipher).await?;
+    send(&mut client, &mut writer.into_inner(), &server_cipher).await?;
     
     // 接收
-    let (reader, _client_cipher) = recv(&mut server, client_cipher).await?;
-    let message = reader.reader().read_string()?;
+    let mut reader = recv(&mut server, &client_cipher).await?.reader();
+    let message = reader.read_string()?;
     assert_eq!("hello client.", message);
     
     Ok(())
@@ -157,7 +158,7 @@ async fn main() -> Result<()> {
     let (mut server, _) = server.accept().await?;
     let client_init = client_init(&mut client, "chain", "0").await;
     let server_init = server_init(&mut server, "chain", |v| v == "0").await;
-    server_start(&mut server, server_init).await?;
+    server_start(&mut server, "chain", 0, server_init).await?;
     client_start(&mut client, client_init).await?;
 
     // 使用chain
