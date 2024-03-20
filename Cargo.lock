@@ -727,6 +727,7 @@ dependencies = [
  "reportme",
  "rsa",
  "serde",
+ "serde_json",
  "thiserror",
  "tokio",
  "variable-len-reader",

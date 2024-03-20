@@ -64,7 +64,18 @@ pub struct Config {
     /// ```
     #[cfg(feature = "compression")]
     #[cfg_attr(docsrs, cfg(feature = "compression"))]
+    #[cfg_attr(feature = "serde", serde(serialize_with = "serialize_compression", deserialize_with = "deserialize_compression"))]
     pub compression: flate2::Compression,
+}
+
+#[cfg(feature = "serde")]
+fn serialize_compression<S: serde::Serializer>(compression: &flate2::Compression, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_u32(compression.level())
+}
+
+#[cfg(feature = "serde")]
+fn deserialize_compression<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<flate2::Compression, D::Error> {
+    <u32 as serde::Deserialize>::deserialize(deserializer).map(|l| flate2::Compression::new(l))
 }
 
 impl Default for Config {
@@ -158,5 +169,14 @@ mod test {
         assert_eq!(1 << 10, get_max_packet_size());
         set_config(Config { max_packet_size: 2 << 10, ..Config::default() });
         assert_eq!(2 << 10, get_max_packet_size());
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn serde() {
+        let config = Config { max_packet_size: 1 << 10, ..Config::default() };
+        let serialized = serde_json::to_string(&config).unwrap();
+        let deserialized: Config = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(config, deserialized);
     }
 }
