@@ -21,7 +21,8 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> TcpServerHandlerCompress<R, W>
         (self.reader, self.writer)
     }
 
-    pub unsafe fn from_inner(reader: R, writer: W, version: String) -> Self {
+    /// Unsafe
+    pub fn from_inner(reader: R, writer: W, version: String) -> Self {
         Self { reader, writer, version }
     }
 
@@ -53,7 +54,8 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> TcpClientHandlerCompress<R, W>
         (self.reader, self.writer)
     }
 
-    pub unsafe fn from_inner(reader: R, writer: W) -> Self {
+    /// Unsafe
+    pub fn from_inner(reader: R, writer: W) -> Self {
         Self { reader, writer }
     }
 

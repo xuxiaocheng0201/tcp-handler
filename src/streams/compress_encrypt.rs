@@ -1,20 +1,20 @@
 use bytes::{Buf, BytesMut};
 use tokio::io::{AsyncRead, AsyncWrite};
 use crate::common::{Cipher, PacketError, StarterError};
-use crate::encrypt::{self, send, recv};
+use crate::compress_encrypt::{self, send, recv};
 use crate::streams::impl_tcp_handler;
 
-pub struct TcpServerHandlerEncrypt<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> {
+pub struct TcpServerHandlerCompressEncrypt<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> {
     reader: R,
     writer: W,
     cipher: Cipher,
     version: String,
 }
 
-impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> TcpServerHandlerEncrypt<R, W> {
+impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> TcpServerHandlerCompressEncrypt<R, W> {
     pub async fn new<P: FnOnce(&str) -> bool>(mut reader: R, mut writer: W, identifier: &str, version_prediction: P, version: &str) -> Result<Self, StarterError> {
-        let init = encrypt::server_init(&mut reader, identifier, version_prediction).await;
-        let (cipher, _protocol_version, application_version) = encrypt::server_start(&mut writer, identifier, version, init).await?;
+        let init = compress_encrypt::server_init(&mut reader, identifier, version_prediction).await;
+        let (cipher, _protocol_version, application_version) = compress_encrypt::server_start(&mut writer, identifier, version, init).await?;
         Ok(Self { reader, writer, cipher, version: application_version })
     }
 
@@ -36,19 +36,19 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> TcpServerHandlerEncrypt<R, W> 
     }
 }
 
-impl_tcp_handler!(server TcpServerHandlerEncrypt);
+impl_tcp_handler!(server TcpServerHandlerCompressEncrypt);
 
 
-pub struct TcpClientHandlerEncrypt<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> {
+pub struct TcpClientHandlerCompressEncrypt<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> {
     reader: R,
     writer: W,
     cipher: Cipher,
 }
 
-impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> TcpClientHandlerEncrypt<R, W> {
+impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> TcpClientHandlerCompressEncrypt<R, W> {
     pub async fn new(mut reader: R, mut writer: W, identifier: &str, version: &str) -> Result<Self, StarterError> {
-        let init = encrypt::client_init(&mut writer, identifier, version).await;
-        let cipher = encrypt::client_start(&mut reader, init).await?;
+        let init = compress_encrypt::client_init(&mut writer, identifier, version).await;
+        let cipher = compress_encrypt::client_start(&mut reader, init).await?;
         Ok(Self { reader, writer, cipher })
     }
 
@@ -70,7 +70,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> TcpClientHandlerEncrypt<R, W> 
     }
 }
 
-impl_tcp_handler!(client TcpClientHandlerEncrypt);
+impl_tcp_handler!(client TcpClientHandlerCompressEncrypt);
 
 
 #[cfg(test)]
@@ -79,14 +79,14 @@ mod tests {
     use bytes::{Buf, BufMut};
     use tokio::{spawn, try_join};
     use variable_len_reader::{VariableReader, VariableWriter};
-    use crate::streams::encrypt::{TcpClientHandlerEncrypt, TcpServerHandlerEncrypt};
+    use crate::streams::compress_encrypt::{TcpClientHandlerCompressEncrypt, TcpServerHandlerCompressEncrypt};
     use crate::streams::tests::{check_send_recv, create};
 
     #[tokio::test(flavor = "multi_thread")]
     async fn connect() -> Result<()> {
         let (cr, cw, sr, sw) = create().await?;
-        let server = spawn(TcpServerHandlerEncrypt::new(sr, sw, "test", |v| v == "0", "0"));
-        let client = spawn(TcpClientHandlerEncrypt::new(cr, cw, "test", "0"));
+        let server = spawn(TcpServerHandlerCompressEncrypt::new(sr, sw, "test", |v| v == "0", "0"));
+        let client = spawn(TcpClientHandlerCompressEncrypt::new(cr, cw, "test", "0"));
         let (server, client) = try_join!(server, client)?;
         let (mut server, mut client) = (server?, client?);
 
