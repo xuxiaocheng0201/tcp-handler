@@ -270,7 +270,7 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 /// #     Ok(())
 /// # }
 /// ```
-pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R) -> Result<impl Buf + Send + Unpin, PacketError> {
+pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R) -> Result<impl Buf + Send, PacketError> {
     let mut bytes = read_packet(stream).await?;
     let message = block_in_place(move || {
         let mut decoder = DeflateDecoder::new(BytesMut::new().writer());

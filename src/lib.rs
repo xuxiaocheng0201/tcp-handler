@@ -13,9 +13,9 @@ pub mod compress;
 #[cfg(feature = "encryption")]
 #[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
 pub mod encrypt;
-// #[cfg(all(feature = "compression", feature = "encryption"))]
-// #[cfg_attr(docsrs, doc(cfg(all(feature = "compression", feature = "encryption"))))]
-// pub mod compress_encrypt;
+#[cfg(feature = "compress_encryption")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compress_encryption")))]
+pub mod compress_encrypt;
 
 pub extern crate bytes;
 

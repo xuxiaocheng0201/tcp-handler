@@ -30,11 +30,11 @@ serde = { version = "^1", optional = true, features = ["derive"] }
 opt-level = 3 # Speed up rsa key gen.
 
 [features]
-default = ["compression_encrypt"]
+default = ["compress_encryption"]
 
 compression = ["dep:flate2"]
 encryption = ["dep:rand", "dep:_aead_with_feature", "dep:rsa", "dep:aes-gcm"]
-compression_encrypt = ["compression", "encryption"]
+compress_encryption = ["compression", "encryption"]
 
 serde = ["dep:serde"]
 

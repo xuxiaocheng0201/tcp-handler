@@ -60,27 +60,24 @@
 //!           │
 //!           │─ Encrypt in-place
 //!           v
-//!         ┌─────────────────────────┐ (Encrypted bytes.)
-//! out <-- │ *********************** │
-//!         └─────────────────────────┘
+//!         ┌────────────────────────┐ (Encrypted bytes.)
+//! out <-- │ ********************** │
+//!         └────────────────────────┘
 //! ```
 //! The recv process:
 //! ```text
-//!         ┌─────────────────────────┐ (Packet data.)
-//! in  --> │ *********************** │
-//!         └─────────────────────────┘
-//!          -Nonce │
-//!           │     │─ Copy once.
-//!           v     v
-//!         ┌─────┬─────────────────────┐ (In contiguous memory.)
-//!         │ *** │ ******************* │
-//!         └─────┴─────────────────────┘
-//!           ┌─────┘
+//!         ┌────────────────────────┐ (Packet data.)
+//! in  --> │ ********************** │
+//!         └────────────────────────┘
+//!           │ // FIXME: copied once here.
 //!           │─ Decrypt in-place
 //!           v
-//!         ┌─────────────────────┐ (Decrypted bytes.)
-//! out <-- │ ******************* │
-//!         └─────────────────────┘
+//!         ┌─────┬─────────────────────┐ (Decrypted bytes.)
+//!         │ *** │ ******************* │
+//!         └─────┴─────────────────────┘
+//!           │     │
+//!          -Nonce │
+//! out <--  ───────┘
 //! ```
 
 use bytes::{Buf, BufMut, BytesMut};
@@ -119,13 +116,7 @@ use crate::common::*;
 /// }
 /// ```
 pub async fn client_init<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str, version: &str) -> Result<rsa::RsaPrivateKey, StarterError> {
-    let (key, n, e) = block_in_place(|| {
-        use rsa::traits::PublicKeyParts;
-        let key = rsa::RsaPrivateKey::new(&mut rand::thread_rng(), 2048)?;
-        let n = key.n().to_bytes_le();
-        let e = key.e().to_bytes_le();
-        Ok::<_, StarterError>((key, n, e))
-    })?;
+    let (key, n, e) = block_in_place(|| generate_rsa_private())?;
     write_head(stream, ProtocolVariant::Encryption, identifier, version).await?;
     write_u8_vec(stream, &n).await?;
     write_u8_vec(stream, &e).await?;
@@ -168,11 +159,7 @@ pub async fn server_init<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(stream: 
     let versions = read_head(stream, ProtocolVariant::Encryption, identifier, version).await?;
     let n = read_u8_vec(stream).await?;
     let e = read_u8_vec(stream).await?;
-    let key = block_in_place(move || {
-        let n = rsa::BigUint::from_bytes_le(&n);
-        let e = rsa::BigUint::from_bytes_le(&e);
-        rsa::RsaPublicKey::new(n, e)
-    })?;
+    let key = block_in_place(move || compose_rsa_public(n, e))?;
     Ok((versions, key))
 }
 
@@ -278,6 +265,7 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
 /// # Arguments
 ///  * `stream` - The tcp stream or `WriteHalf`.
 ///  * `message` - The message to send.
+///  * `cipher` - The cipher returned from [server_start] or [client_start].
 ///
 /// # Example
 /// ```rust,no_run
@@ -327,6 +315,7 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 ///
 /// # Arguments
 ///  * `stream` - The tcp stream or `ReadHalf`.
+///  * `cipher` - The cipher returned from [server_start] or [client_start].
 ///
 /// # Example
 /// ```rust,no_run
@@ -349,15 +338,15 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 /// #     Ok(())
 /// # }
 /// ```
-pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R, cipher: &Cipher) -> Result<impl Buf + Send + Unpin, PacketError> {
+pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R, cipher: &Cipher) -> Result<impl Buf + Send, PacketError> {
     let mut bytes = read_packet(stream).await?;
     let message = block_in_place(move || {
         use aes_gcm::aead::AeadMutInPlace;
         use variable_len_reader::synchronous::{VariableReadable, VariableWritable};
-        let len = bytes.remaining();
-        let mut buffer = BytesMut::with_capacity(len).writer();
-        buffer.write_more_buf(&mut bytes)?; drop(bytes);
-        let mut buffer = buffer.into_inner();
+            let len = bytes.remaining();
+            let mut buffer = BytesMut::with_capacity(len).writer();
+            buffer.write_more_buf(&mut bytes)?; drop(bytes);
+            let mut buffer = buffer.into_inner();
         let ((mut cipher, nonce), lock) = Cipher::get(cipher)?;
         cipher.decrypt_in_place(&nonce, &[], &mut buffer)?;
         let mut reader = buffer.reader();

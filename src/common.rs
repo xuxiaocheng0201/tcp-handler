@@ -267,7 +267,7 @@ pub(crate) async fn write_packet<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, 
 }
 
 /// See [write_packet].
-pub(crate) async fn read_packet<R: AsyncRead + Unpin>(stream: &mut R) -> Result<impl Buf + Send + Unpin, PacketError> {
+pub(crate) async fn read_packet<R: AsyncRead + Unpin>(stream: &mut R) -> Result<impl Buf + Send, PacketError> {
     let len = stream.read_usize_varint_ap().await?;
     check_bytes_len(len)?;
     let mut buf = OwnedReadBuf::new(vec![0; len]);
@@ -276,6 +276,22 @@ pub(crate) async fn read_packet<R: AsyncRead + Unpin>(stream: &mut R) -> Result<
     Ok(buf)
 }
 
+
+#[cfg(feature = "encryption")]
+pub(crate) fn generate_rsa_private() -> Result<(rsa::RsaPrivateKey, Vec<u8>, Vec<u8>), StarterError> {
+    use rsa::traits::PublicKeyParts;
+    let key = rsa::RsaPrivateKey::new(&mut rand::thread_rng(), 2048)?;
+    let n = key.n().to_bytes_le();
+    let e = key.e().to_bytes_le();
+    Ok((key, n, e))
+}
+
+#[cfg(feature = "encryption")]
+pub(crate) fn compose_rsa_public(n: Vec<u8>, e: Vec<u8>) -> Result<rsa::RsaPublicKey, StarterError> {
+    let n = rsa::BigUint::from_bytes_le(&n);
+    let e = rsa::BigUint::from_bytes_le(&e);
+    Ok(rsa::RsaPublicKey::new(n, e)?)
+}
 
 /// The cipher in encryption mode.
 /// You **must** update this value after each call to the send/recv function.
