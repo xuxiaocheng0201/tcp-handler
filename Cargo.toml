@@ -25,18 +25,23 @@ __aead_with_feature = { package = "aead", version = "0", optional = true, defaul
 rsa = { version = "~0.9", optional = true, default-features = false, features = ["std", "sha2"] }
 aes-gcm = { version = "~0.10", optional = true, default-features = false, features = ["std", "aes", "rand_core"] }
 
+async-trait = { version = "~0.1", optional = true }
+
 serde = { version = "^1", optional = true, features = ["derive"] }
 
 [profile.dev.package.num-bigint-dig]
 opt-level = 3 # Speed up rsa key gen.
 
 [features]
-default = ["compress_encryption"]
+default = ["compress_encryption", "auto_flush", "streams"]
 
 __internal_variable_len_reader_with_feature = ["variable-len-reader/sync", "variable-len-reader/std-comp"]
 compression = ["dep:flate2", "__internal_variable_len_reader_with_feature"]
 encryption = ["dep:rand", "dep:__aead_with_feature", "dep:rsa", "dep:aes-gcm", "__internal_variable_len_reader_with_feature"]
 compress_encryption = ["compression", "encryption", "__internal_variable_len_reader_with_feature"]
+auto_flush = ["tokio/io-util"]
+
+streams = ["dep:async-trait"]
 
 serde = ["dep:serde"]
 

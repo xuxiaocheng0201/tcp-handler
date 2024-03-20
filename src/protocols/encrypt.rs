@@ -1,12 +1,12 @@
-//! Compression and encryption protocol.
+//! Encryption protocol. Without compression.
 //!
-//! Recommended to use this protocol.
+//! With encryption, you can keep the data safe from being intercepted by others.
 //!
 //! # Example
 //! ```rust
 //! use anyhow::Result;
 //! use bytes::{Buf, BufMut, BytesMut};
-//! use tcp_handler::compress_encrypt::*;
+//! use tcp_handler::encrypt::*;
 //! use tokio::net::{TcpListener, TcpStream};
 //! use variable_len_reader::{VariableReader, VariableWriter};
 //!
@@ -45,61 +45,49 @@
 //! }
 //! ```
 //!
-//! The send protocol:
+//! The send process:
 //! ```text
-//!         ┌────┬────────┬────────────┐ (It may not be in contiguous memory.)
-//! in  --> │ ** │ ****** │ ********** │
-//!         └────┴────────┴────────────┘
+//!         ┌─────┬────────┬────────────┐ (It may not be in contiguous memory.)
+//! in  --> │ *** │ ****** │ ********** │
+//!         └─────┴────────┴────────────┘
 //!           └─────┐
 //!          +Nonce │
-//!           │     │─ Chain
+//!           │     │─ Copy once.
 //!           v     v
-//!         ┌─────┬────┬────────┬────────────┐ (Zero copy. Not in contiguous memory.)
-//!         │ *** │ ** │ ****** │ ********** │
-//!         └─────┴────┴────────┴────────────┘
-//!           │
-//!           │─ DeflateEncoder
-//!           v
-//!         ┌─────────────────────┐ (Compressed bytes. In contiguous memory.)
-//!         │ ******************* │
-//!         └─────────────────────┘
+//!         ┌─────┬─────────────────────┐ (In contiguous memory.)
+//!         │ *** │ ******************* │
+//!         └─────┴─────────────────────┘
 //!           │
 //!           │─ Encrypt in-place
 //!           v
-//!         ┌─────────────────────┐ (Compressed and encrypted bytes.)
-//! out <-- │ ******************* │
-//!         └─────────────────────┘
+//!         ┌────────────────────────┐ (Encrypted bytes.)
+//! out <-- │ ********************** │
+//!         └────────────────────────┘
 //! ```
 //! The recv process:
 //! ```text
-//!         ┌─────────────────────┐ (Packet data.)
-//! in  --> │ ******************* │
-//!         └─────────────────────┘
+//!         ┌────────────────────────┐ (Packet data.)
+//! in  --> │ ********************** │
+//!         └────────────────────────┘
 //!           │
 //!           │─ Decrypt in-place
 //!           v
-//!         ┌─────┬──────────────────┐ (Decrypted bytes.)
-//!         │ *** │ **************** │
-//!         └─────┴──────────────────┘
+//!         ┌─────┬─────────────────────┐ (Decrypted bytes.)
+//!         │ *** │ ******************* │
+//!         └─────┴─────────────────────┘
 //!           │     │
-//!          -Nonce │─ DeflateDecoder
-//!           ┌─────┘
-//!           v
-//!         ┌─────────────────────┐ (Decrypted and decompressed bytes.)
-//! out <-- │ ******************* │
-//!         └─────────────────────┘
+//!          -Nonce │
+//! out <--  ───────┘
 //! ```
 
 use bytes::{Buf, BufMut, BytesMut};
-use flate2::write::{DeflateDecoder, DeflateEncoder};
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::task::block_in_place;
 use variable_len_reader::{AsyncVariableReader, AsyncVariableWriter};
 use variable_len_reader::helper::{AsyncReaderHelper, AsyncWriterHelper};
 use crate::common::*;
-use crate::config::get_compression;
 
-/// Init the client side in tcp-handler compress_encrypt protocol.
+/// Init the client side in tcp-handler encrypt protocol.
 ///
 /// Must be used in conjunction with [client_start].
 ///
@@ -115,7 +103,7 @@ use crate::config::get_compression;
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::compress_encrypt::{client_init, client_start};
+/// use tcp_handler::encrypt::{client_init, client_start};
 /// use tokio::net::TcpStream;
 ///
 /// #[tokio::main]
@@ -130,13 +118,14 @@ use crate::config::get_compression;
 /// ```
 pub async fn client_init<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str, version: &str) -> Result<rsa::RsaPrivateKey, StarterError> {
     let (key, n, e) = block_in_place(|| generate_rsa_private())?;
-    write_head(stream, ProtocolVariant::CompressEncryption, identifier, version).await?;
+    write_head(stream, ProtocolVariant::Encryption, identifier, version).await?;
     AsyncWriterHelper(stream).help_write_u8_vec(&n).await?;
     AsyncWriterHelper(stream).help_write_u8_vec(&e).await?;
+    flush(stream).await?;
     Ok(key)
 }
 
-/// Init the server side in tcp-handler compress_encrypt protocol.
+/// Init the server side in tcp-handler encrypt protocol.
 ///
 /// Must be used in conjunction with [server_start].
 ///
@@ -152,7 +141,7 @@ pub async fn client_init<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::compress_encrypt::{server_init, server_start};
+/// use tcp_handler::encrypt::{server_init, server_start};
 /// use tokio::net::TcpListener;
 ///
 /// #[tokio::main]
@@ -169,14 +158,14 @@ pub async fn client_init<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str
 /// }
 /// ```
 pub async fn server_init<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(stream: &mut R, identifier: &str, version: P) -> Result<((u16, String), rsa::RsaPublicKey), StarterError> {
-    let versions = read_head(stream, ProtocolVariant::CompressEncryption, identifier, version).await?;
+    let versions = read_head(stream, ProtocolVariant::Encryption, identifier, version).await?;
     let n = AsyncReaderHelper(stream).help_read_u8_vec().await?;
     let e = AsyncReaderHelper(stream).help_read_u8_vec().await?;
     let key = block_in_place(move || compose_rsa_public(n, e))?;
     Ok((versions, key))
 }
 
-/// Make sure the client side is ready to use in tcp-handler compress_encrypt protocol.
+/// Make sure the client side is ready to use in tcp-handler encrypt protocol.
 ///
 /// Must be used in conjunction with [client_init].
 ///
@@ -191,7 +180,7 @@ pub async fn server_init<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(stream: 
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::compress_encrypt::{client_init, client_start};
+/// use tcp_handler::encrypt::{client_init, client_start};
 /// use tokio::net::TcpStream;
 ///
 /// #[tokio::main]
@@ -199,7 +188,7 @@ pub async fn server_init<R: AsyncRead + Unpin, P: FnOnce(&str) -> bool>(stream: 
 ///     let mut client = TcpStream::connect("localhost:25564").await?;
 ///     let c_init = client_init(&mut client, "test", "0").await;
 ///     let cipher = client_start(&mut client, c_init).await?;
-///     // Now the client is ready to use.
+///     // Now the client and cipher are ready to use.
 ///     # let _ = cipher;
 ///     Ok(())
 /// }
@@ -218,7 +207,7 @@ pub async fn client_start<R: AsyncRead + Unpin>(stream: &mut R, last: Result<rsa
     Ok(Cipher::new(cipher))
 }
 
-/// Make sure the server side is ready to use in tcp-handler compress_encrypt protocol.
+/// Make sure the server side is ready to use in tcp-handler encrypt protocol.
 ///
 /// Must be used in conjunction with [server_init].
 ///
@@ -237,7 +226,7 @@ pub async fn client_start<R: AsyncRead + Unpin>(stream: &mut R, last: Result<rsa
 /// # Example
 /// ```rust,no_run
 /// use anyhow::Result;
-/// use tcp_handler::compress_encrypt::{server_init, server_start};
+/// use tcp_handler::encrypt::{server_init, server_start};
 /// use tokio::net::TcpListener;
 ///
 /// #[tokio::main]
@@ -254,7 +243,7 @@ pub async fn client_start<R: AsyncRead + Unpin>(stream: &mut R, last: Result<rsa
 /// }
 /// ```
 pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str, version: &str, last: Result<((u16, String), rsa::RsaPublicKey), StarterError>) -> Result<(Cipher, u16, String), StarterError> {
-    let ((va, vb), rsa) = write_last(stream, ProtocolVariant::CompressEncryption, identifier, version, last).await?;
+    let ((va, vb), rsa) = write_last(stream, ProtocolVariant::Encryption, identifier, version, last).await?;
     let (cipher, nonce, encrypted_aes) = block_in_place(move || {
         use aes_gcm::aead::{KeyInit, AeadCore};
         let aes = aes_gcm::Aes256Gcm::generate_key(&mut rand::thread_rng());
@@ -266,10 +255,11 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
     })?;
     AsyncWriterHelper(stream).help_write_u8_vec(&encrypted_aes).await?;
     stream.write_more(&nonce).await?;
+    flush(stream).await?;
     Ok((Cipher::new((cipher, nonce)), va, vb))
 }
 
-/// Send the message in compress_encrypt tcp-handler protocol.
+/// Send the message in encrypt tcp-handler protocol.
 ///
 /// # Runtime
 /// Due to call [block_in_place] internally,
@@ -284,8 +274,8 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
 /// ```rust,no_run
 /// # use anyhow::Result;
 /// # use bytes::{BufMut, BytesMut};
-/// # use tcp_handler::compress_encrypt::{client_init, client_start};
-/// use tcp_handler::compress_encrypt::send;
+/// # use tcp_handler::encrypt::{client_init, client_start};
+/// use tcp_handler::encrypt::send;
 /// # use tokio::net::TcpStream;
 /// # use variable_len_reader::VariableWriter;
 ///
@@ -301,25 +291,28 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
 /// # }
 /// ```
 pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B, cipher: &Cipher) -> Result<(), PacketError> {
-    let level = get_compression();
     let mut bytes = block_in_place(|| {
         use aes_gcm::aead::{AeadCore, AeadMutInPlace};
+        use aes_gcm::aes::cipher::Unsigned;
         use variable_len_reader::VariableWritable;
         let new_nonce = aes_gcm::Aes256Gcm::generate_nonce(&mut rand::thread_rng());
         debug_assert_eq!(12, new_nonce.len());
-        let mut encoder = DeflateEncoder::new(BytesMut::new().writer(), level);
-        encoder.write_more(&new_nonce)?;
-        encoder.write_more_buf(message)?;
-        let mut bytes = encoder.finish()?.into_inner();
+        let mut bytes = BytesMut::with_capacity(12 + message.remaining() + aes_gcm::aead::consts::U12::to_usize());
+        bytes.extend_from_slice(&new_nonce);
+        let mut writer = bytes.writer();
+        writer.write_more_buf(message)?;
+        let mut bytes = writer.into_inner();
         let ((mut cipher, nonce), lock) = Cipher::get(cipher)?;
         cipher.encrypt_in_place(&nonce, &[], &mut bytes)?;
         Cipher::reset(lock, (cipher, new_nonce));
         Ok::<_, PacketError>(bytes)
     })?;
-    write_packet(stream, &mut bytes).await
+    write_packet(stream, &mut bytes).await?;
+    flush(stream).await?;
+    Ok(())
 }
 
-/// Recv the message in compress_encrypt tcp-handler protocol.
+/// Recv the message in encrypt tcp-handler protocol.
 ///
 /// # Runtime
 /// Due to call [block_in_place] internally,
@@ -333,8 +326,8 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 /// ```rust,no_run
 /// # use anyhow::Result;
 /// # use bytes::Buf;
-/// # use tcp_handler::compress_encrypt::{server_init, server_start};
-/// use tcp_handler::compress_encrypt::recv;
+/// # use tcp_handler::encrypt::{server_init, server_start};
+/// use tcp_handler::encrypt::recv;
 /// # use tokio::net::TcpListener;
 /// # use variable_len_reader::VariableReader;
 ///
@@ -351,15 +344,13 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
 /// # }
 /// ```
 pub async fn recv<R: AsyncRead + Unpin>(stream: &mut R, cipher: &Cipher) -> Result<BytesMut, PacketError> {
-    let mut buffer = read_packet(stream).await?;
+    let mut bytes = read_packet(stream).await?;
     let message = block_in_place(move || {
         use aes_gcm::aead::AeadMutInPlace;
-        use variable_len_reader::{VariableReadable, VariableWritable};
+        use variable_len_reader::VariableReadable;
         let ((mut cipher, nonce), lock) = Cipher::get(cipher)?;
-        cipher.decrypt_in_place(&nonce, &[], &mut buffer)?;
-        let mut decoder = DeflateDecoder::new(BytesMut::new().writer());
-        decoder.write_more_buf(&mut buffer)?;
-        let mut reader = decoder.finish()?.into_inner().reader();
+        cipher.decrypt_in_place(&nonce, &[], &mut bytes)?;
+        let mut reader = bytes.reader();
         let mut new_nonce = [0; 12];
         reader.read_more(&mut new_nonce)?;
         let new_nonce = aes_gcm::Nonce::from(new_nonce);
@@ -374,7 +365,7 @@ mod tests {
     use anyhow::Result;
     use variable_len_reader::{VariableReader, VariableWriter};
     use crate::common::tests::create;
-    use crate::compress_encrypt::*;
+    use crate::encrypt::*;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn connect() -> Result<()> {
@@ -386,17 +377,17 @@ mod tests {
 
         let mut writer = BytesMut::new().writer();
         writer.write_string("hello server in encrypt.")?;
-        crate::encrypt::send(&mut client, &mut writer.into_inner(), &c_cipher).await?;
+        send(&mut client, &mut writer.into_inner(), &c_cipher).await?;
 
-        let mut reader = crate::encrypt::recv(&mut server, &s_cipher).await?.reader();
+        let mut reader = recv(&mut server, &s_cipher).await?.reader();
         let message = reader.read_string()?;
         assert_eq!("hello server in encrypt.", message);
 
         let mut writer = BytesMut::new().writer();
         writer.write_string("hello client in encrypt.")?;
-        crate::encrypt::send(&mut server, &mut writer.into_inner(), &s_cipher).await?;
+        send(&mut server, &mut writer.into_inner(), &s_cipher).await?;
 
-        let mut reader = crate::encrypt::recv(&mut client, &c_cipher).await?.reader();
+        let mut reader = recv(&mut client, &c_cipher).await?.reader();
         let message = reader.read_string()?;
         assert_eq!("hello client in encrypt.", message);
 

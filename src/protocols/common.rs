@@ -1,4 +1,4 @@
-//! Common utilities for this crate.
+//! Common utilities for protocols.
 
 use std::io::Error;
 use bytes::{Buf, BufMut, BytesMut};
@@ -247,6 +247,17 @@ pub(crate) async fn read_packet<R: AsyncRead + Unpin>(stream: &mut R) -> Result<
     let mut buf = BytesMut::with_capacity(len).limit(len);
     stream.read_more_buf(&mut buf).await?;
     Ok(buf.into_inner())
+}
+
+/// Flush if the `auto_flush` feature is enabled.
+#[inline]
+pub(crate) async fn flush<W: AsyncWrite + Unpin>(stream: &mut W) -> Result<(), std::io::Error> {
+    if cfg!(feature = "auto_flush") {
+        use tokio::io::AsyncWriteExt;
+        stream.flush().await
+    } else {
+        Ok(())
+    }
 }
 
 

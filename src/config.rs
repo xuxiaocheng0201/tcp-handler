@@ -70,7 +70,7 @@ pub struct Config {
 
 #[cfg(feature = "serde")]
 fn serialize_compression<S: serde::Serializer>(compression: &flate2::Compression, serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_u32(compression.level())
+    <u32 as serde::Serialize>::serialize(&(compression.level() as u32), serializer)
 }
 
 #[cfg(feature = "serde")]

@@ -90,7 +90,9 @@ use crate::common::*;
 /// ```
 #[inline]
 pub async fn client_init<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str, version: &str) -> Result<(), StarterError> {
-    write_head(stream, ProtocolVariant::Raw, identifier, version).await
+    write_head(stream, ProtocolVariant::Raw, identifier, version).await?;
+    flush(stream).await?;
+    Ok(())
 }
 
 /// Init the server side in tcp-handler raw protocol.
@@ -183,7 +185,9 @@ pub async fn client_start<R: AsyncRead + Unpin>(stream: &mut R, last: Result<(),
 /// ```
 #[inline]
 pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &str, version: &str, last: Result<(u16, String), StarterError>) -> Result<(u16, String), StarterError> {
-    write_last(stream, ProtocolVariant::Raw, identifier, version, last).await
+    let res = write_last(stream, ProtocolVariant::Raw, identifier, version, last).await?;
+    flush(stream).await?;
+    Ok(res)
 }
 
 /// Send the message in raw tcp-handler protocol.
@@ -214,7 +218,9 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
 /// ```
 #[inline]
 pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B) -> Result<(), PacketError> {
-    write_packet(stream, message).await
+    write_packet(stream, message).await?;
+    flush(stream).await?;
+    Ok(())
 }
 
 /// Recv the message in raw tcp-handler protocol.

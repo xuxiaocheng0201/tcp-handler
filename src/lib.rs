@@ -4,18 +4,13 @@
 #![forbid(missing_docs)]
 
 pub mod config;
-pub mod common;
+pub mod protocols;
+#[cfg(feature = "streams")]
+#[cfg_attr(docsrs, doc(cfg(feature = "streams")))]
+pub mod streams;
 
-pub mod raw;
-#[cfg(feature = "compression")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compression")))]
-pub mod compress;
-#[cfg(feature = "encryption")]
-#[cfg_attr(docsrs, doc(cfg(feature = "encryption")))]
-pub mod encrypt;
-#[cfg(feature = "compress_encryption")]
-#[cfg_attr(docsrs, doc(cfg(feature = "compress_encryption")))]
-pub mod compress_encrypt;
+
+pub use protocols::*;
 
 pub extern crate bytes;
 
