@@ -7,6 +7,7 @@ use crate::compress_encrypt::{self, send, recv};
 use crate::streams::impl_tcp_handler;
 
 /// The server side `TcpHandler` of the `compress_encrypt` protocol.
+#[derive(Debug)]
 pub struct TcpServerHandlerCompressEncrypt<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> {
     reader: R,
     writer: W,
@@ -52,6 +53,7 @@ impl_tcp_handler!(server TcpServerHandlerCompressEncrypt);
 
 
 /// The client side `TcpHandler` of the `compress_encrypt` protocol.
+#[derive(Debug)]
 pub struct TcpClientHandlerCompressEncrypt<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> {
     reader: R,
     writer: W,

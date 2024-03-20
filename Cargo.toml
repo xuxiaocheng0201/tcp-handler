@@ -33,7 +33,7 @@ serde = { version = "^1", optional = true, features = ["derive"] }
 opt-level = 3 # Speed up rsa key gen.
 
 [features]
-default = ["compress_encryption", "auto_flush", "streams"]
+default = ["compress_encryption", "auto_flush", "stream_net"]
 
 __internal_variable_len_reader_with_feature = ["variable-len-reader/sync", "variable-len-reader/std-comp"]
 compression = ["dep:flate2", "__internal_variable_len_reader_with_feature"]

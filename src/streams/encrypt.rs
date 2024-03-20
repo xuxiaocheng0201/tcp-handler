@@ -7,6 +7,7 @@ use crate::encrypt::{self, send, recv};
 use crate::streams::impl_tcp_handler;
 
 /// The server side `TcpHandler` of the `encrypt` protocol.
+#[derive(Debug)]
 pub struct TcpServerHandlerEncrypt<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> {
     reader: R,
     writer: W,
@@ -52,6 +53,7 @@ impl_tcp_handler!(server TcpServerHandlerEncrypt);
 
 
 /// The client side `TcpHandler` of the `encrypt` protocol.
+#[derive(Debug)]
 pub struct TcpClientHandlerEncrypt<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> {
     reader: R,
     writer: W,

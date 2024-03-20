@@ -7,6 +7,7 @@ use crate::raw::{self, send, recv};
 use crate::streams::impl_tcp_handler;
 
 /// The server side `TcpHandler` of the `raw` protocol.
+#[derive(Debug)]
 pub struct TcpServerHandlerRaw<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> {
     reader: R,
     writer: W,
@@ -51,6 +52,7 @@ impl_tcp_handler!(server TcpServerHandlerRaw);
 
 
 /// The client side `TcpHandler` of the `raw` protocol.
+#[derive(Debug)]
 pub struct TcpClientHandlerRaw<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> {
     reader: R,
     writer: W,
