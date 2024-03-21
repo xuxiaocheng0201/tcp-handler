@@ -1,6 +1,6 @@
-//! Global configuration for this [crate].
+//! Global configuration for this [`crate`].
 //!
-//! You may change the configuration by calling [set_config] function.
+//! You may change the configuration by calling [`set_config`] function.
 //!
 //! # Example
 //! ```rust
@@ -26,12 +26,12 @@ use once_cell::sync::Lazy;
 /// # }
 /// ```
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize), serde(default))]
 pub struct Config {
     /// `max_packet_size` is the maximum size of a packet in bytes.
     /// It is used to limit the size of a packet that can be received or sent.
     ///
-    /// Default value is `1 << 20`.
+    /// The default value is `1 << 20`.
     ///
     /// # Example
     /// ```rust
@@ -47,7 +47,7 @@ pub struct Config {
     /// ```
     pub max_packet_size: usize,
 
-    /// `compression` is the [flate2::Compression] level when sending packets.
+    /// `compression` is the [`flate2::Compression`] level when sending packets.
     ///
     /// # Example
     /// ```rust
@@ -70,7 +70,7 @@ pub struct Config {
 
 #[cfg(feature = "serde")]
 fn serialize_compression<S: serde::Serializer>(compression: &flate2::Compression, serializer: S) -> Result<S::Ok, S::Error> {
-    <u32 as serde::Serialize>::serialize(&(compression.level() as u32), serializer)
+    <u32 as serde::Serialize>::serialize(&(compression.level()), serializer)
 }
 
 #[cfg(feature = "serde")]
