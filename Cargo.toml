@@ -1,6 +1,6 @@
 [package]
 name = "tcp-handler"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["xuxiaocheng <2762267080@qq.com>"]
 edition = "2021"
 description = "Conveniently transfer data in chunk through tokio TCP stream."

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2024-3-21
+
+### Added
+
+* serde添加缺省值。
+
+### Changed
+
+* 修正数据模型相关文档。
+
 ## [1.0.0] - 2024-3-20
 
 ### Added

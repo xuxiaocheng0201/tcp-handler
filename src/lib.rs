@@ -11,9 +11,11 @@ pub mod streams;
 
 
 #[cfg(feature = "streams")]
+#[cfg_attr(docsrs, doc(cfg(feature = "streams")))]
 pub use streams::*;
 
 pub extern crate bytes;
 
 #[cfg(feature = "compression")]
+#[cfg_attr(docsrs, doc(cfg(feature = "compression")))]
 pub use flate2::Compression;
