@@ -203,7 +203,7 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
     Ok(res)
 }
 
-/// Send the message in compress tcp-handler protocol.
+/// Send the message in tcp-handler compress protocol.
 ///
 /// # Runtime
 /// Due to call [`block_in_place`] internally,
@@ -246,7 +246,7 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
     Ok(())
 }
 
-/// Recv the message in compress tcp-handler protocol.
+/// Recv the message in tcp-handler compress protocol.
 ///
 /// # Runtime
 /// Due to call [`block_in_place`] internally,
@@ -301,7 +301,7 @@ mod tests {
         let s = server_init(&mut server, "a", |v| v == "1").await;
         server_start(&mut server, "a", "1", s).await?;
         client_start(&mut client, c).await?;
-
+for _ in 0..10 {
         let mut writer = BytesMut::new().writer();
         writer.write_string("hello server in compress.")?;
         send(&mut client, &mut writer.into_inner()).await?;
@@ -317,7 +317,7 @@ mod tests {
         let mut reader = recv(&mut client).await?.reader();
         let message = reader.read_string()?;
         assert_eq!("hello client in compress.", message);
-
+}
         Ok(())
     }
 }

@@ -78,16 +78,18 @@
 //!           │
 //!           │─ Decrypt in-place
 //!           v
-//!         ┌─────┬──────────────────┐ (Decrypted bytes.)
+//!         ┌─────────────────────┐ (Decrypted bytes.)
+//!         │ ******************* │
+//!         └─────────────────────┘
+//!           │
+//!           │─ DeflateEncoder
+//!           v
+//!         ┌─────┬──────────────────┐ (Decrypted and decompressed bytes.)
 //!         │ *** │ **************** │
 //!         └─────┴──────────────────┘
 //!           │     │
-//!          -Nonce │─ DeflateDecoder
-//!           ┌─────┘
-//!           v
-//!         ┌─────────────────────┐ (Decrypted and decompressed bytes.)
-//! out <-- │ ******************* │
-//!         └─────────────────────┘
+//!          -Nonce │
+//! out <--  ───────┘
 //! ```
 
 use bytes::{Buf, BufMut, BytesMut};
@@ -271,7 +273,7 @@ pub async fn server_start<W: AsyncWrite + Unpin>(stream: &mut W, identifier: &st
     Ok((Cipher::new((cipher, nonce)), va, vb))
 }
 
-/// Send the message in compress_encrypt tcp-handler protocol.
+/// Send the message in tcp-handler compress_encrypt protocol.
 ///
 /// # Runtime
 /// Due to call [`block_in_place`] internally,
@@ -323,7 +325,7 @@ pub async fn send<W: AsyncWrite + Unpin, B: Buf>(stream: &mut W, message: &mut B
     Ok(())
 }
 
-/// Recv the message in compress_encrypt tcp-handler protocol.
+/// Recv the message in tcp-handler compress_encrypt protocol.
 ///
 /// # Runtime
 /// Due to call [`block_in_place`] internally,
@@ -387,7 +389,7 @@ mod tests {
         let s = server_init(&mut server, "a", |v| v == "1").await;
         let (s_cipher, _, _) = server_start(&mut server, "a", "1", s).await?;
         let c_cipher = client_start(&mut client, c).await?;
-
+for _ in 0..10 {
         let mut writer = BytesMut::new().writer();
         writer.write_string("hello server in encrypt.")?;
         send(&mut client, &mut writer.into_inner(), &c_cipher).await?;
@@ -403,7 +405,7 @@ mod tests {
         let mut reader = recv(&mut client, &c_cipher).await?.reader();
         let message = reader.read_string()?;
         assert_eq!("hello client in encrypt.", message);
-
+}
         Ok(())
     }
 }
