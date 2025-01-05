@@ -101,6 +101,13 @@ async fn main() -> Result<()> {
 ```
 
 
+# 基准测试
+
+运行速度: `raw` > `compress` > `compress_encrypt` > `encrypt`
+
+但是目前这个基准测试并不严格，欢迎任何贡献！
+
+
 # 协议版本
 
 内部实现的协议版本。

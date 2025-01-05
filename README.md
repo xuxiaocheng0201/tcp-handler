@@ -101,6 +101,13 @@ async fn main() -> Result<()> {
 ```
 
 
+# Benchmarks
+
+Speed: `raw` > `compress` > `compress_encrypt` > `encrypt`
+
+But currently the benchmarks are not serious. Welcome to contribute.
+
+
 # Protocol Version
 
 The protocol version code used internally.
