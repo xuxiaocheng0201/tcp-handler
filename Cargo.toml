@@ -46,9 +46,6 @@ stream_net = ["streams", "tokio/net"]
 
 serde = ["dep:serde"]
 
-[build-dependencies]
-reportme = ">=0.2"
-
 [dev-dependencies]
 anyhow = "^1"
 tokio = { version = "^1", features = ["macros", "io-util", "net"] }
